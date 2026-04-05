@@ -84,7 +84,7 @@ object ObdResponseParser {
                 ObdCommand.COMMANDED_EGR -> parsePercentA(cleaned, command)
                 ObdCommand.FUEL_RAIL_PRESSURE_VAC -> parseTwoByteA(cleaned, command, 0)
                 ObdCommand.FUEL_RAIL_PRESSURE_DIRECT -> parseFuelRailDirect(cleaned, command)
-                ObdCommand.BOOST_PRESSURE -> parseTwoByteA(cleaned, command, 0)
+                ObdCommand.BOOST_PRESSURE -> parseBoostPressure(cleaned, command)
                 ObdCommand.O2_SENSORS -> parseSingleByteA(cleaned, command, 0)
                 ObdCommand.O2_S1_WR_CURRENT -> parseWrCurrent(cleaned, command)
                 ObdCommand.O2_S2_WR_CURRENT -> parseWrCurrent(cleaned, command)
@@ -96,7 +96,9 @@ object ObdResponseParser {
                     ParsedValue(cleaned, null, "Bitmask: $cleaned", command.unit)
 
                 // Tryb 09
-                ObdCommand.PERF_TRACKING, ObdCommand.CVN, ObdCommand.ESN ->
+                ObdCommand.PERF_TRACKING -> parsePerfTracking(cleaned, command)
+                ObdCommand.CVN -> parseCvn(cleaned, command)
+                ObdCommand.ESN ->
                     ParsedValue(cleaned, null, cleaned, command.unit)
                 ObdCommand.ECU_NAME, ObdCommand.CALIBRATION_ID -> parseAscii(cleaned, command)
 
@@ -172,20 +174,20 @@ object ObdResponseParser {
                 ObdCommand.ENGINE_RUN_TIME_AECD2 -> parseFourByteA(cleaned, command)
 
                 // AdBlue / bieg skrzyni
-                ObdCommand.TRANSMISSION_ACTUAL_GEAR -> parseSingleByteA(cleaned, command, 0)
+                ObdCommand.TRANSMISSION_ACTUAL_GEAR -> parseTransmissionGear(cleaned, command)
                 ObdCommand.CYLINDER_FUEL_RATE -> parseTwoByteA(cleaned, command, 0)
 
                 // Statusy tekstowe
-                ObdCommand.FUEL_STATUS, ObdCommand.SECONDARY_AIR_STATUS,
-                ObdCommand.O2_SENSORS_ALT, ObdCommand.AUX_INPUT_STATUS,
-                ObdCommand.MAX_VALUES, ObdCommand.MAX_MAF,
+                ObdCommand.FUEL_STATUS -> parseFuelStatus(cleaned, command)
+                ObdCommand.SECONDARY_AIR_STATUS, ObdCommand.O2_SENSORS_ALT,
+                ObdCommand.AUX_INPUT_STATUS, ObdCommand.MAX_VALUES, ObdCommand.MAX_MAF,
                 ObdCommand.EMISSION_REQUIREMENTS, ObdCommand.AUX_IO_SUPPORTED,
                 ObdCommand.COMMANDED_EGR2, ObdCommand.NOX_REAGENT_SYSTEM,
                 ObdCommand.SCR_INDUCE_SYSTEM, ObdCommand.AECD_11_15, ObdCommand.AECD_16_20,
                 ObdCommand.DIESEL_AFTERTREAT, ObdCommand.VGT_STATUS, ObdCommand.WASTEGATE_STATUS,
-                ObdCommand.DPF_STATUS, ObdCommand.NOX_NTE_STATUS, ObdCommand.PM_NTE_STATUS,
-                ObdCommand.MONITOR_STATUS_DRIVE ->
+                ObdCommand.DPF_STATUS, ObdCommand.NOX_NTE_STATUS, ObdCommand.PM_NTE_STATUS ->
                     ParsedValue(cleaned, null, cleaned, command.unit)
+                ObdCommand.MONITOR_STATUS_DRIVE -> parseMonitorStatus(cleaned, command)
 
                 // ── Tryb 02 Freeze Frame ─────────────────────────────────
                 // Odpowiedź trybu 02 ma nagłówek "42 XX" zamiast "41 XX".
@@ -256,26 +258,43 @@ object ObdResponseParser {
         else -> "N/A"
     }
 
-    /** Wydobywa bajty danych z odpowiedzi (pomija nagłówek tryb+PID)
+    /** Wydobywa bajty danych z odpowiedzi (pomija naglowek tryb+PID)
      *
-     * ELM327 z ATS1 (spaces on) odpowiada:  "41 0C 1A 2B"
-     *                                         ^^ ^^  ^^^^
-     *                                    tryb PID  dane
-     * 0x41 = tryb 01 response (0x40 + 0x01)
-     * 0x49 = tryb 09 response (0x40 + 0x09)
+     * Obsluguje trzy formaty ELM327:
+     * 1) Jednoliniowy:  "41 0C 1A 2B"  -> dane: [0x1A, 0x2B]
+     * 2) Wieloliniowy z ramkami: "009 0: 41 8B 51 00 03 00  1: 00 00"
+     *    Parser usuwa "009","0:","1:" i zbiera bajty hex z pierwszej odpowiedzi.
+     * 3) Zduplikowany (dwie odpowiedzi sklejone) - bierzemy tylko pierwsza.
+     *
+     * Bajty odpowiedzi: 41=tryb01, 42=tryb02(FF), 46=tryb06, 49=tryb09
      */
     private fun extractDataBytes(response: String): List<Int> {
-        val tokens = response.split(Regex("\\s+"))
-            .filter { it.length == 2 && it.matches(Regex("[0-9A-F]{2}")) }
+        // Usun naglowki wieloliniowe: "009","01B" (bajt dlugosci) i "0:","1:" (numery ramek)
+        val stripped = response
+            .replace(Regex("\b[0-9A-Fa-f]{3}\b"), " ")
+            .replace(Regex("\d+:"), " ")
+
+        val tokens = stripped.split(Regex("\s+"))
+            .filter { it.length == 2 && it.matches(Regex("[0-9A-Fa-f]{2}")) }
+            .map { it.uppercase() }
 
         if (tokens.isEmpty()) return emptyList()
 
-        // Sprawdź czy pierwszy token to bajt odpowiedzi (41=tryb01, 49=tryb09)
-        return when (tokens[0]) {
-            "41", "49" -> tokens.drop(2).map { it.toInt(16) }  // pomiń tryb + PID
-            else -> tokens.map { it.toInt(16) }                 // brak nagłówka, zwróć wszystko
+        // Znajdz PIERWSZY naglowek odpowiedzi i pobierz dane po nim
+        val responseHeaders = setOf("41", "42", "46", "49")
+        val firstHdrIdx = tokens.indexOfFirst { it in responseHeaders }
+
+        return if (firstHdrIdx >= 0 && firstHdrIdx + 2 <= tokens.size) {
+            val dataStart = firstHdrIdx + 2  // pominz naglowek + PID
+            // Zatrzymaj sie przed kolejnym naglowkiem (zduplikowana odpowiedz)
+            val nextHdrIdx = tokens.drop(dataStart).indexOfFirst { it in responseHeaders }
+            val dataEnd = if (nextHdrIdx >= 0) dataStart + nextHdrIdx else tokens.size
+            tokens.subList(dataStart, dataEnd).map { it.toInt(16) }
+        } else {
+            tokens.map { it.toInt(16) }
         }
     }
+
 
     // ─── Parsery dla konkretnych PIDów ──────────────────────────────────────
 
@@ -483,7 +502,7 @@ object ObdResponseParser {
         val d = extractDataBytes(r)
         if (d.size < 4) return ParsedValue(r, null, "N/A", cmd.unit)
         val v = ((d[0].toLong() shl 24) or (d[1].toLong() shl 16) or
-                (d[2].toLong() shl 8) or d[3].toLong()).toDouble()
+                 (d[2].toLong() shl 8) or d[3].toLong()).toDouble()
         return ParsedValue(r, v, "%.0f".format(v), cmd.unit)
     }
 
@@ -580,4 +599,301 @@ object ObdResponseParser {
         val display = "%.0f Pa".format(pa)
         return ParsedValue(r, pa, display, cmd.unit)
     }
+
+    // =========================================================================
+    // ██████╗  █████╗ ██████╗ ███████╗███████╗██████╗
+    // ██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔════╝██╔══██╗
+    // ██████╔╝███████║██████╔╝███████╗█████╗  ██████╔╝
+    // ██╔═══╝ ██╔══██║██╔══██╗╚════██║██╔══╝  ██╔══██╗
+    // ██║     ██║  ██║██║  ██║███████║███████╗██║  ██║
+    // TRYB 09 PID 08 – PERFORMANCE TRACKING (IUMPR)
+    // Plik: ObdResponseParser.kt  |  Szukaj: parsePerfTracking
+    // =========================================================================
+    /**
+     * Parser dla trybu 09 PID 08 — IUMPR (In-Use Monitor Performance Ratio).
+     *
+     * ECU zwraca serię par 16-bitowych liczników dla każdego monitora:
+     *   [numerator_16bit] [denominator_16bit]  — powtórzone dla każdego monitora
+     *
+     * Odpowiedź wieloliniowa ISO 15765 (CAN), np.:
+     *   01B 0: 49 08 14 19 56 51
+     *         1: CA 21 9F 19 56 00 00
+     *         2: 00 00 23 82 19 56 00
+     *         3: 00 00 00 0A 8F 19 56
+     *         4: 00 00 00 00 00 00 00
+     *
+     * Nagłówek: 49 08 [count_byte] — count_byte = liczba wartości (par liczb)
+     * Następnie pary: NUMERATOR_HI NUMERATOR_LO DENOM_HI DENOM_LO
+     *
+     * Monitory (kolejność standardowa SAE J1979):
+     *   0: OBD Monitor Conditions Encountered
+     *   1: Ignition Counter
+     *   2: Catalyst B1
+     *   3: Catalyst B2
+     *   4: O2 Sensor B1
+     *   5: O2 Sensor B2
+     *   6: EGR/VVT
+     *   7: EVAP
+     *   8: Secondary Air
+     *   9–: dodatkowe (zależne od pojazdu)
+     *
+     * Wyświetlamy jako "Monitor: num/denom" — jeśli denom=0 to "n/a"
+     */
+    private fun parsePerfTracking(r: String, cmd: ObdCommand): ParsedValue {
+        // Zbierz wszystkie tokeny hex
+        val tokens = r
+            .replace(Regex("\\d+:"), " ")        // usuń "0:", "1:", "2:"
+            .replace(Regex("\\b\\d{3}\\b"), " ") // usuń bajt długości "01B"
+            .replace(Regex("[^0-9A-F ]"), " ")
+            .trim()
+            .split(Regex("\\s+"))
+            .filter { it.length == 2 && it.matches(Regex("[0-9A-F]{2}")) }
+
+        if (tokens.isEmpty()) return ParsedValue(r, null, "Brak danych", cmd.unit)
+
+        // Pomiń nagłówek odpowiedzi "49 08 [count]"
+        val dataBytes: List<Int> = when {
+            tokens.size >= 3 && tokens[0] == "49" && tokens[1] == "08" ->
+                tokens.drop(3).map { it.toInt(16) }
+            tokens.size >= 2 && tokens[0] == "49" ->
+                tokens.drop(2).map { it.toInt(16) }
+            else ->
+                tokens.map { it.toInt(16) }
+        }
+
+        if (dataBytes.isEmpty()) return ParsedValue(r, null, "Brak danych", cmd.unit)
+
+        // Nazwy monitorów wg SAE J1979 Tabela D.5
+        val monitorNames = listOf(
+            "Warunki OBD",
+            "Licznik zapłonów",
+            "Katalizator B1",
+            "Katalizator B2",
+            "Sonda O2 B1",
+            "Sonda O2 B2",
+            "EGR/VVT",
+            "EVAP",
+            "Wtórne powietrze"
+        )
+
+        val sb = StringBuilder()
+        var index = 0
+        var monitorIndex = 0
+
+        while (index + 3 < dataBytes.size) {
+            val numerator   = (dataBytes[index]     shl 8) or dataBytes[index + 1]
+            val denominator = (dataBytes[index + 2] shl 8) or dataBytes[index + 3]
+            index += 4
+
+            // Pomiń pary 0/0 — ECU wypełnia nieużywane sloty zerami
+            if (numerator == 0 && denominator == 0) {
+                monitorIndex++
+                continue
+            }
+
+            val name = if (monitorIndex < monitorNames.size)
+                monitorNames[monitorIndex]
+            else
+                "Monitor ${monitorIndex + 1}"
+
+            val ratio = if (denominator > 0)
+                " (${String.format("%.2f", numerator.toDouble() / denominator)})"
+            else
+                " (n/a)"
+
+            if (sb.isNotEmpty()) sb.append("  |  ")
+            sb.append("$name: $numerator/$denominator$ratio")
+            monitorIndex++
+        }
+
+        val display = if (sb.isEmpty()) "Brak danych monitorów" else sb.toString()
+        return ParsedValue(r, null, display, cmd.unit)
+    }
+    // =========================================================================
+    // KONIEC parsePerfTracking
+    // =========================================================================
+    // =========================================================================
+    // NOWE PARSERY — dodane po analizie Audi A4 2024
+    // Szukaj: parseBoostPressure | parseTransmissionGear |
+    //         parseMonitorStatus | parseFuelStatus | parseCvn
+    // =========================================================================
+
+    /**
+     * PID 0x70 — Boost Pressure Control
+     *
+     * Format (SAE J1979-2):
+     *   41 70 [ctrl] [des_H] [des_L] [act_H] [act_L]
+     *   ctrl bit0=1 -> sensor A present, bit1=1 -> sensor B
+     *   des  = desired boost kPa (unsigned, skala 1 kPa/bit)
+     *   act  = actual  boost kPa (unsigned, skala 1 kPa/bit)
+     *
+     * Stara wersja brala bajty 0-1 (ctrl+des_H) -> dawalo 512 kPa (stale).
+     * Teraz bierzemy bajty 3-4 (act_H + act_L) = faktyczne cisnienie.
+     * Wyswietlamy: "act kPa (desired: des kPa)"
+     */
+    private fun parseBoostPressure(r: String, cmd: ObdCommand): ParsedValue {
+        val d = extractDataBytes(r)
+        // Minimum: ctrl(1) + desired(2) + actual(2) = 5 bajtow
+        if (d.size < 5) {
+            // Fallback do prostego 2-bajtowego gdy format inny
+            if (d.size >= 2) {
+                val kpa = (d[0] * 256 + d[1]).toDouble()
+                return ParsedValue(r, kpa, "%.0f".format(kpa), cmd.unit)
+            }
+            return ParsedValue(r, null, "N/A", cmd.unit)
+        }
+        val desired = (d[1] * 256 + d[2]).toDouble()
+        val actual  = (d[3] * 256 + d[4]).toDouble()
+        val display = "%.0f (cel: %.0f)".format(actual, desired)
+        return ParsedValue(r, actual, display, cmd.unit)
+    }
+
+    /**
+     * PID 0xA4 — Transmission Actual Gear
+     *
+     * Format (SAE J1979):
+     *   41 A4 [ctrl] [ratio_H] [ratio_L] [gear]
+     *   ctrl   = bitmapa dostepnych danych
+     *   ratio  = przelozenie * 1000 (unsigned 16-bit)
+     *   gear   = aktualny bieg (0=neutral/park, 1-8=bieg)
+     *
+     * Stara wersja: parseSingleByteA bral bajt 0 (ctrl) -> zawsze 1 (stale).
+     * Teraz: bajt 3 = faktyczny bieg, bajty 1-2 = przelozenie.
+     */
+    private fun parseTransmissionGear(r: String, cmd: ObdCommand): ParsedValue {
+        val d = extractDataBytes(r)
+        return when {
+            d.size >= 4 -> {
+                val gear  = d[3]
+                val ratio = (d[1] * 256 + d[2]) / 1000.0
+                val gearLabel = when (gear) {
+                    0    -> "N/P"
+                    else -> gear.toString()
+                }
+                val display = if (ratio > 0.01) "$gearLabel (${String.format("%.3f", ratio)}:1)"
+                              else gearLabel
+                ParsedValue(r, gear.toDouble(), display, cmd.unit)
+            }
+            d.size >= 1 -> {
+                // Krotka odpowiedz — tylko bieg
+                val gear = d[0]
+                ParsedValue(r, gear.toDouble(), gear.toString(), cmd.unit)
+            }
+            else -> ParsedValue(r, null, "N/A", cmd.unit)
+        }
+    }
+
+    /**
+     * PID 0x41 — Monitor Status This Drive Cycle
+     *
+     * Format: 4 bajty bitmapowe (identyczny jak PID 0x01 STATUS).
+     * Bajt A: bit7=MIL, bity 6-0=liczba DTC
+     * Bajt B: bity dostepnosci i stanu monitorow (iskrowy/diesel)
+     * Bajty C-D: szczegoly monitorow (katalizator, O2, EVAP itd.)
+     *
+     * Zamiast surowego hex wyswietlamy czytelne podsumowanie.
+     */
+    private fun parseMonitorStatus(r: String, cmd: ObdCommand): ParsedValue {
+        val d = extractDataBytes(r)
+        if (d.size < 4) return ParsedValue(r, null, if (r.isBlank()) "N/A" else r, cmd.unit)
+
+        val milOn   = (d[0] and 0x80) != 0
+        val dtcCnt  = d[0] and 0x7F
+        val isDiesel = (d[1] and 0x08) != 0
+
+        // Bajt B bity 7-4 = dostepnosc monitorow (1=dostepny)
+        // Bajt C bity 7-4 = status monitorow     (0=OK/gotowy, 1=niegotowy)
+        val monitors = if (isDiesel) listOf(
+            "NMHC"   to (Pair((d[1] shr 3) and 1, (d[2] shr 3) and 1)),
+            "NOx"    to (Pair((d[1] shr 2) and 1, (d[2] shr 2) and 1)),
+            "Boost"  to (Pair((d[1] shr 1) and 1, (d[2] shr 1) and 1)),
+            "EGT"    to (Pair((d[1] shr 0) and 1, (d[2] shr 0) and 1))
+        ) else listOf(
+            "Kat"    to (Pair((d[1] shr 3) and 1, (d[2] shr 3) and 1)),
+            "Ogrzew" to (Pair((d[1] shr 2) and 1, (d[2] shr 2) and 1)),
+            "EVAP"   to (Pair((d[1] shr 1) and 1, (d[2] shr 1) and 1)),
+            "AIR"    to (Pair((d[1] shr 0) and 1, (d[2] shr 0) and 1))
+        )
+
+        val readyList   = monitors.filter { (_, p) -> p.first == 1 && p.second == 0 }.map { it.first }
+        val notReadyList= monitors.filter { (_, p) -> p.first == 1 && p.second == 1 }.map { it.first }
+
+        val sb = StringBuilder()
+        if (milOn) sb.append("MIL ON • $dtcCnt DTC") else sb.append("OK • $dtcCnt DTC")
+        if (readyList.isNotEmpty())    sb.append(" | Gotowe: ${readyList.joinToString(",")}")
+        if (notReadyList.isNotEmpty()) sb.append(" | Niegotowe: ${notReadyList.joinToString(",")}")
+
+        return ParsedValue(r, dtcCnt.toDouble(), sb.toString(), cmd.unit)
+    }
+
+    /**
+     * PID 0x03 — Fuel System Status
+     *
+     * Bajt A = status ukladu paliwowego bank 1
+     * Bajt B = status ukladu paliwowego bank 2 (0 jesli 1 bank)
+     *
+     * Kody:
+     *  0x01 = petla otwarta (rozgrzewanie)
+     *  0x02 = petla zamknieta (normalnie)
+     *  0x04 = petla otwarta — za bogate
+     *  0x08 = petla otwarta — za ubogie
+     *  0x10 = petla zamknieta z usterka (sonda zla)
+     */
+    private fun parseFuelStatus(r: String, cmd: ObdCommand): ParsedValue {
+        val d = extractDataBytes(r)
+        if (d.isEmpty()) return ParsedValue(r, null, "N/A", cmd.unit)
+        fun decode(b: Int) = when (b) {
+            0x01 -> "Otwarta (rozgrzew)"
+            0x02 -> "Zamknieta"
+            0x04 -> "Otwarta (za bogata)"
+            0x08 -> "Otwarta (za uboga)"
+            0x10 -> "Zamknieta (blad sondy)"
+            else -> "0x%02X".format(b)
+        }
+        val b1 = decode(d[0])
+        val display = if (d.size >= 2 && d[1] != 0) "B1: $b1 | B2: ${decode(d[1])}" else b1
+        return ParsedValue(r, d[0].toDouble(), display, cmd.unit)
+    }
+
+    /**
+     * PID 0x06 trybu 09 — CVN (Calibration Verification Number)
+     *
+     * Odpowiedz wieloliniowa: "49 06 01 1C 70 B2 CB  49 06 01 79 C8 43 CF"
+     * Kazdy blok to: 49 06 [count] [4 bajty CVN hex]
+     * Wyswietlamy jako "CVN1: 1C70B2CB | CVN2: 79C843CF"
+     */
+    private fun parseCvn(r: String, cmd: ObdCommand): ParsedValue {
+        // Zbierz wszystkie tokeny hex z calej odpowiedzi (wieloliniowej)
+        val allTokens = r
+            .replace(Regex("\d+:"), " ")
+            .split(Regex("\s+"))
+            .filter { it.length == 2 && it.matches(Regex("[0-9A-Fa-f]{2}")) }
+            .map { it.uppercase() }
+
+        if (allTokens.isEmpty()) return ParsedValue(r, null, "N/A", cmd.unit)
+
+        // Znajdz wszystkie bloki "49 06 [cnt] [4 bajty]"
+        val cvnList = mutableListOf<String>()
+        var i = 0
+        while (i < allTokens.size) {
+            if (i + 5 < allTokens.size &&
+                allTokens[i] == "49" && allTokens[i+1] == "06") {
+                // allTokens[i+2] = count byte (ile bajtow CVN, zwykle 4)
+                val cvnHex = allTokens.subList(i + 3, minOf(i + 7, allTokens.size))
+                    .joinToString("")
+                if (cvnHex.isNotEmpty()) cvnList.add(cvnHex)
+                i += 7
+            } else {
+                i++
+            }
+        }
+
+        val display = if (cvnList.isEmpty()) r.take(30)
+                      else cvnList.mapIndexed { idx, v -> "CVN${idx+1}: $v" }.joinToString(" | ")
+        return ParsedValue(r, null, display, cmd.unit)
+    }
+    // =========================================================================
+    // KONIEC NOWYCH PARSERÓW
+    // =========================================================================
+
 }
