@@ -1,11 +1,11 @@
-#Tue Mar 24 09:41:11 CET 2026
-base.0=/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/build/intermediates/dex/debug/mergeExtDexDebug/classes.dex
-base.1=/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/build/intermediates/dex/debug/mergeProjectDexDebug/0/classes.dex
-base.2=/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/build/intermediates/dex/debug/mergeProjectDexDebug/11/classes.dex
-base.3=/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/build/intermediates/dex/debug/mergeProjectDexDebug/12/classes.dex
-base.4=/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/build/intermediates/dex/debug/mergeProjectDexDebug/15/classes.dex
-base.5=/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/build/intermediates/dex/debug/mergeProjectDexDebug/2/classes.dex
-base.6=/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/build/intermediates/dex/debug/mergeExtDexDebug/classes2.dex
+#Sun Apr 05 15:02:27 CEST 2026
+base.0=C\:\\Users\\puzon\\Documents\\AndroidOBD\\TESTY_OBD\\OBDAndroid-16\\app\\build\\intermediates\\dex\\debug\\mergeExtDexDebug\\classes.dex
+base.1=C\:\\Users\\puzon\\Documents\\AndroidOBD\\TESTY_OBD\\OBDAndroid-16\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\0\\classes.dex
+base.2=C\:\\Users\\puzon\\Documents\\AndroidOBD\\TESTY_OBD\\OBDAndroid-16\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\11\\classes.dex
+base.3=C\:\\Users\\puzon\\Documents\\AndroidOBD\\TESTY_OBD\\OBDAndroid-16\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\12\\classes.dex
+base.4=C\:\\Users\\puzon\\Documents\\AndroidOBD\\TESTY_OBD\\OBDAndroid-16\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\15\\classes.dex
+base.5=C\:\\Users\\puzon\\Documents\\AndroidOBD\\TESTY_OBD\\OBDAndroid-16\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\2\\classes.dex
+base.6=C\:\\Users\\puzon\\Documents\\AndroidOBD\\TESTY_OBD\\OBDAndroid-16\\app\\build\\intermediates\\dex\\debug\\mergeExtDexDebug\\classes2.dex
 path.0=classes.dex
 path.1=0/classes.dex
 path.2=11/classes.dex
