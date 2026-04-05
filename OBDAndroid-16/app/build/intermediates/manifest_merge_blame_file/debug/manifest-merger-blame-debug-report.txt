@@ -1,0 +1,191 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.obdreader.app"
+4    android:versionCode="1"
+5    android:versionName="1.0.0" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="23"
+9        android:targetSdkVersion="34" />
+10
+11    <!-- ─── Bluetooth permissions ─────────────────────────────────────────── -->
+12
+13
+14    <!-- Internet (wymagane do wysyłania danych telemetrycznych) -->
+15    <uses-permission android:name="android.permission.INTERNET" />
+15-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:8:5-67
+15-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:8:22-64
+16    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+16-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:9:5-79
+16-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:9:22-76
+17
+18    <!-- Android 11 i starsze -->
+19    <uses-permission
+19-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:12:5-95
+20        android:name="android.permission.BLUETOOTH"
+20-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:12:22-65
+21        android:maxSdkVersion="30" />
+21-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:12:66-92
+22    <uses-permission
+22-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:13:5-101
+23        android:name="android.permission.BLUETOOTH_ADMIN"
+23-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:13:22-71
+24        android:maxSdkVersion="30" />
+24-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:13:72-98
+25    <!-- Wymagane dla skanowania BT na Android <12 -->
+26    <uses-permission
+26-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:15:5-106
+27        android:name="android.permission.ACCESS_FINE_LOCATION"
+27-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:15:22-76
+28        android:maxSdkVersion="30" />
+28-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:15:77-103
+29
+30    <!-- Android 12+ (API 31+) -->
+31    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+31-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:18:5-76
+31-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:18:22-73
+32    <uses-permission
+32-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:19:5-20:58
+33        android:name="android.permission.BLUETOOTH_SCAN"
+33-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:19:22-70
+34        android:usesPermissionFlags="neverForLocation" />
+34-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:20:9-55
+35
+36    <!-- Internet (nie wymagany dla BT, ale przydatny dla logowania) -->
+37    <!-- <uses-permission android:name="android.permission.INTERNET" /> -->
+38
+39    <uses-feature
+39-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:25:5-27:35
+40        android:name="android.hardware.bluetooth"
+40-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:26:9-50
+41        android:required="true" />
+41-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:27:9-32
+42
+43    <permission
+43-->[androidx.core:core:1.12.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/a09928384ec1935e808ab75bc8da5541/transformed/core-1.12.0/AndroidManifest.xml:22:5-24:47
+44        android:name="com.obdreader.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+44-->[androidx.core:core:1.12.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/a09928384ec1935e808ab75bc8da5541/transformed/core-1.12.0/AndroidManifest.xml:23:9-81
+45        android:protectionLevel="signature" />
+45-->[androidx.core:core:1.12.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/a09928384ec1935e808ab75bc8da5541/transformed/core-1.12.0/AndroidManifest.xml:24:9-44
+46
+47    <uses-permission android:name="com.obdreader.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+47-->[androidx.core:core:1.12.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/a09928384ec1935e808ab75bc8da5541/transformed/core-1.12.0/AndroidManifest.xml:26:5-97
+47-->[androidx.core:core:1.12.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/a09928384ec1935e808ab75bc8da5541/transformed/core-1.12.0/AndroidManifest.xml:26:22-94
+48
+49    <application
+49-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:29:5-46:19
+50        android:allowBackup="true"
+50-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:30:9-35
+51        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+51-->[androidx.core:core:1.12.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/a09928384ec1935e808ab75bc8da5541/transformed/core-1.12.0/AndroidManifest.xml:28:18-86
+52        android:debuggable="true"
+53        android:extractNativeLibs="false"
+54        android:label="OBD2 Reader"
+54-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:31:9-36
+55        android:supportsRtl="true"
+55-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:32:9-35
+56        android:testOnly="true"
+57        android:theme="@style/Theme.OBDReader"
+57-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:33:9-47
+58        android:usesCleartextTraffic="true" >
+58-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:34:9-44
+59        <activity
+59-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:36:9-44:20
+60            android:name="com.obdreader.app.ui.MainActivity"
+60-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:37:13-44
+61            android:exported="true"
+61-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:38:13-36
+62            android:windowSoftInputMode="adjustResize" >
+62-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:39:13-55
+63            <intent-filter>
+63-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:40:13-43:29
+64                <action android:name="android.intent.action.MAIN" />
+64-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:41:17-69
+64-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:41:25-66
+65
+66                <category android:name="android.intent.category.LAUNCHER" />
+66-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:42:17-77
+66-->/Users/mikolajnowacki/Downloads/OBDAndroid-16/app/src/main/AndroidManifest.xml:42:27-74
+67            </intent-filter>
+68        </activity>
+69        <activity
+69-->[androidx.compose.ui:ui-test-manifest:1.5.4] /Users/mikolajnowacki/.gradle/caches/transforms-4/f6cc5eee8eedfd96cc385ae7c0d7a065/transformed/ui-test-manifest-1.5.4/AndroidManifest.xml:23:9-25:39
+70            android:name="androidx.activity.ComponentActivity"
+70-->[androidx.compose.ui:ui-test-manifest:1.5.4] /Users/mikolajnowacki/.gradle/caches/transforms-4/f6cc5eee8eedfd96cc385ae7c0d7a065/transformed/ui-test-manifest-1.5.4/AndroidManifest.xml:24:13-63
+71            android:exported="true" />
+71-->[androidx.compose.ui:ui-test-manifest:1.5.4] /Users/mikolajnowacki/.gradle/caches/transforms-4/f6cc5eee8eedfd96cc385ae7c0d7a065/transformed/ui-test-manifest-1.5.4/AndroidManifest.xml:25:13-36
+72        <activity
+72-->[androidx.compose.ui:ui-tooling-android:1.5.4] /Users/mikolajnowacki/.gradle/caches/transforms-4/7f1e804ad88810701c7a62087e55fb7d/transformed/ui-tooling-release/AndroidManifest.xml:23:9-25:39
+73            android:name="androidx.compose.ui.tooling.PreviewActivity"
+73-->[androidx.compose.ui:ui-tooling-android:1.5.4] /Users/mikolajnowacki/.gradle/caches/transforms-4/7f1e804ad88810701c7a62087e55fb7d/transformed/ui-tooling-release/AndroidManifest.xml:24:13-71
+74            android:exported="true" />
+74-->[androidx.compose.ui:ui-tooling-android:1.5.4] /Users/mikolajnowacki/.gradle/caches/transforms-4/7f1e804ad88810701c7a62087e55fb7d/transformed/ui-tooling-release/AndroidManifest.xml:25:13-36
+75
+76        <provider
+76-->[androidx.emoji2:emoji2:1.4.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/9be30a595dea300937fdd1e75686b7e1/transformed/emoji2-1.4.0/AndroidManifest.xml:24:9-32:20
+77            android:name="androidx.startup.InitializationProvider"
+77-->[androidx.emoji2:emoji2:1.4.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/9be30a595dea300937fdd1e75686b7e1/transformed/emoji2-1.4.0/AndroidManifest.xml:25:13-67
+78            android:authorities="com.obdreader.app.androidx-startup"
+78-->[androidx.emoji2:emoji2:1.4.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/9be30a595dea300937fdd1e75686b7e1/transformed/emoji2-1.4.0/AndroidManifest.xml:26:13-68
+79            android:exported="false" >
+79-->[androidx.emoji2:emoji2:1.4.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/9be30a595dea300937fdd1e75686b7e1/transformed/emoji2-1.4.0/AndroidManifest.xml:27:13-37
+80            <meta-data
+80-->[androidx.emoji2:emoji2:1.4.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/9be30a595dea300937fdd1e75686b7e1/transformed/emoji2-1.4.0/AndroidManifest.xml:29:13-31:52
+81                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+81-->[androidx.emoji2:emoji2:1.4.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/9be30a595dea300937fdd1e75686b7e1/transformed/emoji2-1.4.0/AndroidManifest.xml:30:17-75
+82                android:value="androidx.startup" />
+82-->[androidx.emoji2:emoji2:1.4.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/9be30a595dea300937fdd1e75686b7e1/transformed/emoji2-1.4.0/AndroidManifest.xml:31:17-49
+83            <meta-data
+83-->[androidx.lifecycle:lifecycle-process:2.6.2] /Users/mikolajnowacki/.gradle/caches/transforms-4/8675a3a7fb4c515dec36db2e7f40438f/transformed/lifecycle-process-2.6.2/AndroidManifest.xml:29:13-31:52
+84                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+84-->[androidx.lifecycle:lifecycle-process:2.6.2] /Users/mikolajnowacki/.gradle/caches/transforms-4/8675a3a7fb4c515dec36db2e7f40438f/transformed/lifecycle-process-2.6.2/AndroidManifest.xml:30:17-78
+85                android:value="androidx.startup" />
+85-->[androidx.lifecycle:lifecycle-process:2.6.2] /Users/mikolajnowacki/.gradle/caches/transforms-4/8675a3a7fb4c515dec36db2e7f40438f/transformed/lifecycle-process-2.6.2/AndroidManifest.xml:31:17-49
+86            <meta-data
+86-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/8a3d37ee385e6c84ba5e800b225df9e0/transformed/profileinstaller-1.3.0/AndroidManifest.xml:29:13-31:52
+87                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+87-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/8a3d37ee385e6c84ba5e800b225df9e0/transformed/profileinstaller-1.3.0/AndroidManifest.xml:30:17-85
+88                android:value="androidx.startup" />
+88-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/8a3d37ee385e6c84ba5e800b225df9e0/transformed/profileinstaller-1.3.0/AndroidManifest.xml:31:17-49
+89        </provider>
+90
+91        <receiver
+91-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/8a3d37ee385e6c84ba5e800b225df9e0/transformed/profileinstaller-1.3.0/AndroidManifest.xml:34:9-52:20
+92            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+92-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/8a3d37ee385e6c84ba5e800b225df9e0/transformed/profileinstaller-1.3.0/AndroidManifest.xml:35:13-76
+93            android:directBootAware="false"
+93-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/8a3d37ee385e6c84ba5e800b225df9e0/transformed/profileinstaller-1.3.0/AndroidManifest.xml:36:13-44
+94            android:enabled="true"
+94-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/8a3d37ee385e6c84ba5e800b225df9e0/transformed/profileinstaller-1.3.0/AndroidManifest.xml:37:13-35
+95            android:exported="true"
+95-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/8a3d37ee385e6c84ba5e800b225df9e0/transformed/profileinstaller-1.3.0/AndroidManifest.xml:38:13-36
+96            android:permission="android.permission.DUMP" >
+96-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/8a3d37ee385e6c84ba5e800b225df9e0/transformed/profileinstaller-1.3.0/AndroidManifest.xml:39:13-57
+97            <intent-filter>
+97-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/8a3d37ee385e6c84ba5e800b225df9e0/transformed/profileinstaller-1.3.0/AndroidManifest.xml:40:13-42:29
+98                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+98-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/8a3d37ee385e6c84ba5e800b225df9e0/transformed/profileinstaller-1.3.0/AndroidManifest.xml:41:17-91
+98-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/8a3d37ee385e6c84ba5e800b225df9e0/transformed/profileinstaller-1.3.0/AndroidManifest.xml:41:25-88
+99            </intent-filter>
+100            <intent-filter>
+100-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/8a3d37ee385e6c84ba5e800b225df9e0/transformed/profileinstaller-1.3.0/AndroidManifest.xml:43:13-45:29
+101                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+101-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/8a3d37ee385e6c84ba5e800b225df9e0/transformed/profileinstaller-1.3.0/AndroidManifest.xml:44:17-85
+101-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/8a3d37ee385e6c84ba5e800b225df9e0/transformed/profileinstaller-1.3.0/AndroidManifest.xml:44:25-82
+102            </intent-filter>
+103            <intent-filter>
+103-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/8a3d37ee385e6c84ba5e800b225df9e0/transformed/profileinstaller-1.3.0/AndroidManifest.xml:46:13-48:29
+104                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+104-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/8a3d37ee385e6c84ba5e800b225df9e0/transformed/profileinstaller-1.3.0/AndroidManifest.xml:47:17-88
+104-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/8a3d37ee385e6c84ba5e800b225df9e0/transformed/profileinstaller-1.3.0/AndroidManifest.xml:47:25-85
+105            </intent-filter>
+106            <intent-filter>
+106-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/8a3d37ee385e6c84ba5e800b225df9e0/transformed/profileinstaller-1.3.0/AndroidManifest.xml:49:13-51:29
+107                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+107-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/8a3d37ee385e6c84ba5e800b225df9e0/transformed/profileinstaller-1.3.0/AndroidManifest.xml:50:17-95
+107-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/mikolajnowacki/.gradle/caches/transforms-4/8a3d37ee385e6c84ba5e800b225df9e0/transformed/profileinstaller-1.3.0/AndroidManifest.xml:50:25-92
+108            </intent-filter>
+109        </receiver>
+110    </application>
+111
+112</manifest>
