@@ -272,9 +272,9 @@ object ObdResponseParser {
         // Usun naglowki wieloliniowe: "009","01B" (bajt dlugosci) i "0:","1:" (numery ramek)
         val stripped = response
             .replace(Regex("\b[0-9A-Fa-f]{3}\b"), " ")
-            .replace(Regex("\d+:"), " ")
+            .replace(Regex("\\d+:"), " ")
 
-        val tokens = stripped.split(Regex("\s+"))
+        val tokens = stripped.split(Regex("\\s+"))
             .filter { it.length == 2 && it.matches(Regex("[0-9A-Fa-f]{2}")) }
             .map { it.uppercase() }
 
@@ -865,8 +865,8 @@ object ObdResponseParser {
     private fun parseCvn(r: String, cmd: ObdCommand): ParsedValue {
         // Zbierz wszystkie tokeny hex z calej odpowiedzi (wieloliniowej)
         val allTokens = r
-            .replace(Regex("\d+:"), " ")
-            .split(Regex("\s+"))
+            .replace(Regex("\\d+:"), " ")
+            .split(Regex("\\s+"))
             .filter { it.length == 2 && it.matches(Regex("[0-9A-Fa-f]{2}")) }
             .map { it.uppercase() }
 

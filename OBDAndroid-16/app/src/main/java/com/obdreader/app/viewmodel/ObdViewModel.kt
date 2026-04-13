@@ -4,6 +4,7 @@ import android.app.Application
 import android.bluetooth.BluetoothDevice
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.obdreader.app.auth.AuthManager
 import com.obdreader.app.bluetooth.ObdBluetoothManager
 import com.obdreader.app.obd.ObdCategory
 import com.obdreader.app.obd.ObdCommand
@@ -24,13 +25,44 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     val bluetoothManager = ObdBluetoothManager()
     val dataLogger       = ObdDataLogger(application)
     val uploader         = TelemetryUploader(application)
+    val authManager      = AuthManager(application)
 
     // ─── Priorytety / interwały ───────────────────────────────────────────────
     private val BASE_INTERVAL_MS = 1000L
     private val MEDIUM_EVERY     = 5
     private val LOW_EVERY        = 30
 
-    // ─── Stan UI ──────────────────────────────────────────────────────────────
+    // ─── Stan Auth ────────────────────────────────────────────────────────────
+    /** true = zalogowany lub gość; false = pokaż ekran logowania */
+    private val _authPassed = MutableStateFlow(authManager.isLoggedIn)
+    val authPassed: StateFlow<Boolean> = _authPassed.asStateFlow()
+
+    private val _isAuthLoading = MutableStateFlow(false)
+    val isAuthLoading: StateFlow<Boolean> = _isAuthLoading.asStateFlow()
+
+    private val _authError = MutableStateFlow<String?>(null)
+    val authError: StateFlow<String?> = _authError.asStateFlow()
+
+    // ─── Stan pojazdów ────────────────────────────────────────────────────────
+    private val _vehicles = MutableStateFlow<List<AuthManager.Vehicle>>(emptyList())
+    val vehicles: StateFlow<List<AuthManager.Vehicle>> = _vehicles.asStateFlow()
+
+    private val _isLoadingVehicles = MutableStateFlow(false)
+    val isLoadingVehicles: StateFlow<Boolean> = _isLoadingVehicles.asStateFlow()
+
+    private val _vehicleError = MutableStateFlow<String?>(null)
+    val vehicleError: StateFlow<String?> = _vehicleError.asStateFlow()
+
+    private val _isAddingVehicle = MutableStateFlow(false)
+    val isAddingVehicle: StateFlow<Boolean> = _isAddingVehicle.asStateFlow()
+
+    private val _addVehicleError = MutableStateFlow<String?>(null)
+    val addVehicleError: StateFlow<String?> = _addVehicleError.asStateFlow()
+
+    private val _showAddVehicleDialog = MutableStateFlow(false)
+    val showAddVehicleDialog: StateFlow<Boolean> = _showAddVehicleDialog.asStateFlow()
+
+    // ─── Stan UI (OBD) ────────────────────────────────────────────────────────
     private val _sensorData = MutableStateFlow<Map<ObdCommand, ObdResponseParser.ParsedValue>>(emptyMap())
     val sensorData: StateFlow<Map<ObdCommand, ObdResponseParser.ParsedValue>> = _sensorData.asStateFlow()
 
@@ -59,7 +91,103 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     private var scanJob:    Job? = null
     private var connectJob: Job? = null
 
+    // ─── Auth ─────────────────────────────────────────────────────────────────
+
+    fun login(email: String, password: String) {
+        viewModelScope.launch {
+            _isAuthLoading.value = true
+            _authError.value = null
+            when (val result = authManager.login(email, password)) {
+                is AuthManager.AuthResult.Success -> {
+                    _authPassed.value = true
+                    loadVehicles()
+                }
+                is AuthManager.AuthResult.Error -> {
+                    _authError.value = result.message
+                }
+            }
+            _isAuthLoading.value = false
+        }
+    }
+
+    fun register(email: String, firstName: String, lastName: String, password: String) {
+        viewModelScope.launch {
+            _isAuthLoading.value = true
+            _authError.value = null
+            when (val result = authManager.register(email, firstName, lastName, password)) {
+                is AuthManager.AuthResult.Success -> {
+                    _authPassed.value = true
+                    loadVehicles()
+                }
+                is AuthManager.AuthResult.Error -> {
+                    _authError.value = result.message
+                }
+            }
+            _isAuthLoading.value = false
+        }
+    }
+
+    fun continueAsGuest() {
+        _authPassed.value = true
+    }
+
+    fun logout() {
+        authManager.logout()
+        _authPassed.value = false
+        _authError.value = null
+        _vehicles.value = emptyList()
+        disconnect()
+    }
+
+    fun clearAuthError() { _authError.value = null }
+
+    // ─── Pojazdy ──────────────────────────────────────────────────────────────
+
+    fun loadVehicles() {
+        if (!authManager.isLoggedIn) return
+        viewModelScope.launch {
+            _isLoadingVehicles.value = true
+            _vehicleError.value = null
+            when (val result = authManager.getVehicles()) {
+                is AuthManager.VehicleResult.Success -> _vehicles.value = result.vehicles
+                is AuthManager.VehicleResult.Error   -> _vehicleError.value = result.message
+                else -> {}
+            }
+            _isLoadingVehicles.value = false
+        }
+    }
+
+    fun showAddVehicle() {
+        _addVehicleError.value = null
+        _showAddVehicleDialog.value = true
+    }
+
+    fun hideAddVehicle() {
+        _showAddVehicleDialog.value = false
+        _addVehicleError.value = null
+    }
+
+    fun addVehicle(name: String, make: String, model: String, year: String) {
+        viewModelScope.launch {
+            _isAddingVehicle.value = true
+            _addVehicleError.value = null
+            when (val result = authManager.addVehicle(name, make, model, year)) {
+                is AuthManager.VehicleResult.Added -> {
+                    _showAddVehicleDialog.value = false
+                    loadVehicles() // odśwież listę
+                    addLog("Pojazd dodany (ID: ${result.id})")
+                }
+                is AuthManager.VehicleResult.Error -> {
+                    _addVehicleError.value = result.message
+                }
+                else -> {}
+            }
+            _isAddingVehicle.value = false
+        }
+    }
+
     // ─── Połączenie ───────────────────────────────────────────────────────────
+
     fun connect(device: BluetoothDevice) {
         connectJob?.cancel()
         connectJob = viewModelScope.launch {
@@ -70,7 +198,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
                 addLog("Protokół: ${bluetoothManager.activeProtocolName} | Timeout: ${bluetoothManager.calibratedTimeoutMs}ms")
                 val vin = vinInfo.value
                 if (vin.isNotBlank()) addLog("VIN: $vin")
-                // Sprawdź czy są pliki do ponownego wysłania
                 val retryCount = uploader.pendingRetryCount()
                 if (retryCount > 0) {
                     addLog("Próba wysłania $retryCount oczekujących plików...")
@@ -88,7 +215,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
         connectJob?.cancel()
         stopScanning()
         viewModelScope.launch {
-            // Wyślij ostatni batch przed rozłączeniem
             flushAndUpload()
             dataLogger.closeSession()
         }
@@ -99,6 +225,7 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ─── Sesja ────────────────────────────────────────────────────────────────
+
     private fun startSession() {
         dataLogger.openSession(vin = vinInfo.value)
         _isLogging.value = true
@@ -112,7 +239,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             flushAndUpload()
             dataLogger.closeSession()
-            // Wyślij cały plik sesji
             dataLogger.currentSessionFile()?.let { file ->
                 if (file.exists()) {
                     val ok = uploader.uploadSessionFile(file)
@@ -128,15 +254,11 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshSessionList() { _sessionFiles.value = dataLogger.listSessions() }
 
-    // ─── Ustawienia uploadera (można zmieniać z UI) ───────────────────────────
+    // ─── Ustawienia uploadera ─────────────────────────────────────────────────
+
     fun setBackendUrl(url: String) {
         uploader.backendUrl = url
         addLog("Backend URL: $url")
-    }
-
-    fun setUploadInterval(records: Int) {
-        uploader.uploadIntervalRecords = records
-        addLog("Interwał uploadu: co $records rekordów")
     }
 
     fun retryPendingUploads() {
@@ -152,6 +274,7 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ─── Skanowanie z priorytetami ─────────────────────────────────────────────
+
     fun startScanning() {
         if (_isScanning.value) return
         _isScanning.value = true
@@ -160,7 +283,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
         scanJob = viewModelScope.launch {
             var cycleCount = 0
 
-            // Jednorazowy odczyt ONCE
             val onceCommands = supportedCommands.value.filter { it.priority == ReadPriority.ONCE }
             if (onceCommands.isNotEmpty()) {
                 val onceData = bluetoothManager.readCommands(onceCommands)
@@ -185,14 +307,10 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
                         val newData = bluetoothManager.readCommands(toRead)
                         mergeData(newData)
 
-                        // ── Logowanie + Upload ─────────────────────────────
                         if (_isLogging.value) {
-                            // addRecord zwraca ten sam JSONObject który trafia do pliku —
-                            // przekazujemy go bezpośrednio do uploadera, żeby uploader
-                            // wysyłał DOKŁADNIE tyle czujników co jest zapisanych na dysku
                             val recordJson = dataLogger.addRecord(_sensorData.value)
                             val metaJson   = buildMetaJson()
-                            val uploaded   = if (recordJson != null)
+                            val uploaded = if (recordJson != null)
                                 uploader.onNewRecord(recordJson, metaJson)
                             else false
 
@@ -230,13 +348,13 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     fun selectCategory(category: ObdCategory?) { _selectedCategory.value = category }
 
     // ─── Helpery ──────────────────────────────────────────────────────────────
+
     private fun mergeData(newData: Map<ObdCommand, ObdResponseParser.ParsedValue>) {
         val merged = _sensorData.value.toMutableMap()
         merged.putAll(newData)
         _sensorData.value = merged
     }
 
-    /** Wysyła pozostały batch przed rozłączeniem */
     private suspend fun flushAndUpload() {
         if (!_isLogging.value) return
         val old = uploader.uploadIntervalRecords
@@ -246,9 +364,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
         uploader.uploadIntervalRecords = old
         _uploadStatus.value = uploader.lastUploadStatus
     }
-
-    // buildRecordJson usunięty — ViewModel używa teraz JSONObject
-    // zwróconego przez dataLogger.addRecord() bezpośrednio
 
     private fun buildMetaJson(): JSONObject = JSONObject().apply {
         put("session_id", dataLogger.currentSessionFile()?.nameWithoutExtension ?: "unknown")
