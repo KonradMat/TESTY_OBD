@@ -65,28 +65,6 @@ OBDAndroid/
 
 ---
 
-## 🔄 Odpowiedniki Python → Kotlin
-
-| Python (`obd_connector.py`) | Kotlin (`ObdBluetoothManager.kt`) |
-|---|---|
-| `obd.OBD("COM5")` | `BluetoothDevice.createRfcommSocketToServiceRecord(SPP_UUID)` |
-| `connect(max_retries=3)` | `connect(device, maxRetries=3)` |
-| `_detect_all_supported_commands()` | `detectSupportedCommands()` |
-| `read_single_scan()` | `readSingleScan()` |
-| `connection.query(obd.commands.RPM)` | `sendObdCommand(ObdCommand.ENGINE_RPM)` |
-| Port COM (Windows) | Bluetooth SPP UUID `00001101-...` |
-| `pyserial` | Android `BluetoothSocket` |
-| `python-obd` | Własny parser (`ObdResponseParser.kt`) |
-
-### Dlaczego nie port COM?
-Na Androidzie nie istnieją porty COM. Zamiast tego:
-- Windows: `COM5` → wirtualny port COM przez Bluetooth
-- Android: **RFCOMM socket** z UUID SPP `00001101-0000-1000-8000-00805F9B34FB`
-
-Oba podejścia wysyłają **identyczne bajty** do kostki ELM327 – różni się tylko warstwa transportowa.
-
----
-
 ## 📡 Obsługiwane PIDy OBD2
 
 ### Tryb 01 – dane na żywo
