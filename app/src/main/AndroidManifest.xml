@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.obdreader.app">
+
+    <!-- ─── Bluetooth permissions ─────────────────────────────────────────── -->
+
+    <!-- Internet (wymagane do wysyłania danych telemetrycznych) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Android 11 i starsze -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <!-- Wymagane dla skanowania BT na Android <12 -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+
+    <!-- Android 12+ (API 31+) -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+
+    <!-- Internet (nie wymagany dla BT, ale przydatny dla logowania) -->
+    <!-- <uses-permission android:name="android.permission.INTERNET" /> -->
+
+    <uses-feature
+        android:name="android.hardware.bluetooth"
+        android:required="true" />
+
+    <application
+        android:allowBackup="true"
+        android:label="OBD2 Reader"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.OBDReader"
+        android:usesCleartextTraffic="true">
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+    </application>
+
+</manifest>
