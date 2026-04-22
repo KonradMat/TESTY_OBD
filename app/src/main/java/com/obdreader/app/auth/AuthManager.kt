@@ -57,7 +57,6 @@ class AuthManager(private val context: Context) {
     /**
      * Rejestracja nowego konta.
      * POST /api/Auth/register
-     * Body: { email, firstName, lastName, password }
      */
     suspend fun register(
         email: String,
@@ -74,11 +73,9 @@ class AuthManager(private val context: Context) {
             }
             val response = postJson("$BASE_URL/api/Auth/register", body.toString())
             if (response.first in 200..299) {
-                // Po rejestracji od razu się logujemy
                 login(email, password)
             } else {
                 val msg = parseErrorMessage(response.second) ?: "Błąd rejestracji (${response.first})"
-                Log.w(TAG, "Rejestracja nieudana: ${response.first} ${response.second}")
                 AuthResult.Error(msg)
             }
         } catch (e: Exception) {
@@ -90,8 +87,6 @@ class AuthManager(private val context: Context) {
     /**
      * Logowanie.
      * POST /api/Auth/login
-     * Body: { email, password }
-     * Odpowiedź zawiera token JWT (szukamy "token" lub "accessToken").
      */
     suspend fun login(email: String, password: String): AuthResult =
         withContext(Dispatchers.IO) {
@@ -106,15 +101,12 @@ class AuthManager(private val context: Context) {
                     if (jwt != null) {
                         token = jwt
                         savedEmail = email
-                        Log.d(TAG, "Zalogowano, token zapisany")
                         AuthResult.Success
                     } else {
-                        Log.w(TAG, "Brak tokenu w odpowiedzi: ${response.second}")
                         AuthResult.Error("Serwer nie zwrócił tokenu")
                     }
                 } else {
                     val msg = parseErrorMessage(response.second) ?: "Nieprawidłowy email lub hasło"
-                    Log.w(TAG, "Logowanie nieudane: ${response.first}")
                     AuthResult.Error(msg)
                 }
             } catch (e: Exception) {
@@ -128,6 +120,7 @@ class AuthManager(private val context: Context) {
     sealed class VehicleResult {
         data class Success(val vehicles: List<Vehicle>) : VehicleResult()
         data class Added(val id: Int?) : VehicleResult()
+        object Deleted : VehicleResult()
         data class Error(val message: String) : VehicleResult()
     }
 
@@ -174,7 +167,6 @@ class AuthManager(private val context: Context) {
     /**
      * Dodaje nowy pojazd.
      * POST /api/Vehicles
-     * Body: { name, make, model, year }
      */
     suspend fun addVehicle(
         name: String,
@@ -205,6 +197,25 @@ class AuthManager(private val context: Context) {
         }
     }
 
+    /**
+     * Usuwa pojazd.
+     * DELETE /api/Vehicles/{id}
+     */
+    suspend fun deleteVehicle(id: Int): VehicleResult = withContext(Dispatchers.IO) {
+        try {
+            val response = deleteJson("$BASE_URL/api/Vehicles/$id")
+            if (response.first in 200..299) {
+                VehicleResult.Deleted
+            } else {
+                val msg = parseErrorMessage(response.second) ?: "Błąd usuwania pojazdu (${response.first})"
+                VehicleResult.Error(msg)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Błąd deleteVehicle: ${e.message}")
+            VehicleResult.Error("Brak połączenia z serwerem")
+        }
+    }
+
     // ─── HTTP helpers ─────────────────────────────────────────────────────────
 
     private fun postJson(urlStr: String, jsonBody: String): Pair<Int, String> {
@@ -226,9 +237,7 @@ class AuthManager(private val context: Context) {
             }
             val code = conn.responseCode
             val body = try { conn.inputStream.bufferedReader().readText() }
-            catch (e: Exception) {
-                conn.errorStream?.bufferedReader()?.readText() ?: ""
-            }
+            catch (e: Exception) { conn.errorStream?.bufferedReader()?.readText() ?: "" }
             Pair(code, body)
         } finally {
             conn.disconnect()
@@ -249,9 +258,28 @@ class AuthManager(private val context: Context) {
             }
             val code = conn.responseCode
             val body = try { conn.inputStream.bufferedReader().readText() }
-            catch (e: Exception) {
-                conn.errorStream?.bufferedReader()?.readText() ?: ""
+            catch (e: Exception) { conn.errorStream?.bufferedReader()?.readText() ?: "" }
+            Pair(code, body)
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    private fun deleteJson(urlStr: String): Pair<Int, String> {
+        val url = URL(urlStr)
+        val conn = url.openConnection() as HttpURLConnection
+        return try {
+            conn.apply {
+                requestMethod = "DELETE"
+                doInput = true
+                connectTimeout = CONNECT_TIMEOUT_MS
+                readTimeout = READ_TIMEOUT_MS
+                setRequestProperty("Accept", "application/json")
+                token?.let { setRequestProperty("Authorization", "Bearer $it") }
             }
+            val code = conn.responseCode
+            val body = try { conn.inputStream.bufferedReader().readText() }
+            catch (e: Exception) { conn.errorStream?.bufferedReader()?.readText() ?: "" }
             Pair(code, body)
         } finally {
             conn.disconnect()
@@ -260,17 +288,14 @@ class AuthManager(private val context: Context) {
 
     // ─── Parsery ──────────────────────────────────────────────────────────────
 
-    /** Szuka tokenu JWT w odpowiedzi JSON (różne klucze zależnie od serwera) */
     private fun extractToken(body: String): String? {
         return try {
             val obj = JSONObject(body)
-            // Próbujemy różnych kluczy
             obj.optString("token").takeIf { it.isNotBlank() }
                 ?: obj.optString("accessToken").takeIf { it.isNotBlank() }
                 ?: obj.optString("access_token").takeIf { it.isNotBlank() }
                 ?: obj.optString("jwt").takeIf { it.isNotBlank() }
         } catch (e: Exception) {
-            // Może sam token (plain string)
             body.trim().takeIf { it.length > 20 && !it.startsWith("{") }
         }
     }

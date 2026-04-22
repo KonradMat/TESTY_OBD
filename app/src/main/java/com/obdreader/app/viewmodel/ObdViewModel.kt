@@ -37,6 +37,10 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     private val _authPassed = MutableStateFlow(authManager.isLoggedIn)
     val authPassed: StateFlow<Boolean> = _authPassed.asStateFlow()
 
+    /** true = użytkownik wszedł jako gość (nie ma tokenu) */
+    private val _isGuest = MutableStateFlow(false)
+    val isGuest: StateFlow<Boolean> = _isGuest.asStateFlow()
+
     private val _isAuthLoading = MutableStateFlow(false)
     val isAuthLoading: StateFlow<Boolean> = _isAuthLoading.asStateFlow()
 
@@ -61,6 +65,13 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _showAddVehicleDialog = MutableStateFlow(false)
     val showAddVehicleDialog: StateFlow<Boolean> = _showAddVehicleDialog.asStateFlow()
+
+    // Pojazd do potwierdzenia usunięcia (null = dialog zamknięty)
+    private val _vehicleToDelete = MutableStateFlow<AuthManager.Vehicle?>(null)
+    val vehicleToDelete: StateFlow<AuthManager.Vehicle?> = _vehicleToDelete.asStateFlow()
+
+    private val _isDeletingVehicle = MutableStateFlow(false)
+    val isDeletingVehicle: StateFlow<Boolean> = _isDeletingVehicle.asStateFlow()
 
     // ─── Stan UI (OBD) ────────────────────────────────────────────────────────
     private val _sensorData = MutableStateFlow<Map<ObdCommand, ObdResponseParser.ParsedValue>>(emptyMap())
@@ -99,6 +110,7 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
             _authError.value = null
             when (val result = authManager.login(email, password)) {
                 is AuthManager.AuthResult.Success -> {
+                    _isGuest.value = false
                     _authPassed.value = true
                     loadVehicles()
                 }
@@ -116,6 +128,7 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
             _authError.value = null
             when (val result = authManager.register(email, firstName, lastName, password)) {
                 is AuthManager.AuthResult.Success -> {
+                    _isGuest.value = false
                     _authPassed.value = true
                     loadVehicles()
                 }
@@ -128,11 +141,13 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun continueAsGuest() {
+        _isGuest.value = true
         _authPassed.value = true
     }
 
     fun logout() {
         authManager.logout()
+        _isGuest.value = false
         _authPassed.value = false
         _authError.value = null
         _vehicles.value = emptyList()
@@ -174,7 +189,7 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
             when (val result = authManager.addVehicle(name, make, model, year)) {
                 is AuthManager.VehicleResult.Added -> {
                     _showAddVehicleDialog.value = false
-                    loadVehicles() // odśwież listę
+                    loadVehicles()
                     addLog("Pojazd dodany (ID: ${result.id})")
                 }
                 is AuthManager.VehicleResult.Error -> {
@@ -183,6 +198,37 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
                 else -> {}
             }
             _isAddingVehicle.value = false
+        }
+    }
+
+    fun requestDeleteVehicle(vehicle: AuthManager.Vehicle) {
+        _vehicleToDelete.value = vehicle
+    }
+
+    fun cancelDeleteVehicle() {
+        _vehicleToDelete.value = null
+    }
+
+    fun confirmDeleteVehicle() {
+        val vehicle = _vehicleToDelete.value ?: return
+        viewModelScope.launch {
+            _isDeletingVehicle.value = true
+            when (val result = authManager.deleteVehicle(vehicle.id)) {
+                is AuthManager.VehicleResult.Deleted -> {
+                    _vehicleToDelete.value = null
+                    loadVehicles()
+                    addLog("Pojazd usunięty: ${vehicle.name}")
+                }
+                is AuthManager.VehicleResult.Error -> {
+                    // Zostaw dialog otwarty, pokaż błąd przez vehicleError
+                    _vehicleError.value = result.message
+                    _vehicleToDelete.value = null
+                }
+                else -> {
+                    _vehicleToDelete.value = null
+                }
+            }
+            _isDeletingVehicle.value = false
         }
     }
 
@@ -198,13 +244,15 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
                 addLog("Protokół: ${bluetoothManager.activeProtocolName} | Timeout: ${bluetoothManager.calibratedTimeoutMs}ms")
                 val vin = vinInfo.value
                 if (vin.isNotBlank()) addLog("VIN: $vin")
-                val retryCount = uploader.pendingRetryCount()
-                if (retryCount > 0) {
-                    addLog("Próba wysłania $retryCount oczekujących plików...")
-                    val sent = uploader.retryPending()
-                    if (sent > 0) addLog("Ponownie wysłano: $sent plików")
+                if (!_isGuest.value) {
+                    val retryCount = uploader.pendingRetryCount()
+                    if (retryCount > 0) {
+                        addLog("Próba wysłania $retryCount oczekujących plików...")
+                        val sent = uploader.retryPending()
+                        if (sent > 0) addLog("Ponownie wysłano: $sent plików")
+                    }
+                    startSession()
                 }
-                startSession()
             } else {
                 addLog("Błąd: nie udało się połączyć")
             }
@@ -215,8 +263,10 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
         connectJob?.cancel()
         stopScanning()
         viewModelScope.launch {
-            flushAndUpload()
-            dataLogger.closeSession()
+            if (!_isGuest.value) {
+                flushAndUpload()
+                dataLogger.closeSession()
+            }
         }
         bluetoothManager.disconnect()
         _sensorData.value = emptyMap()
@@ -307,7 +357,8 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
                         val newData = bluetoothManager.readCommands(toRead)
                         mergeData(newData)
 
-                        if (_isLogging.value) {
+                        // Logowanie tylko dla zalogowanych
+                        if (_isLogging.value && !_isGuest.value) {
                             val recordJson = dataLogger.addRecord(_sensorData.value)
                             val metaJson   = buildMetaJson()
                             val uploaded = if (recordJson != null)
@@ -374,7 +425,7 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
         } ?: "")
     }
 
-    private fun addLog(message: String) {
+    fun addLog(message: String) {
         val ts = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
             .format(java.util.Date())
         val current = _logMessages.value.toMutableList()
