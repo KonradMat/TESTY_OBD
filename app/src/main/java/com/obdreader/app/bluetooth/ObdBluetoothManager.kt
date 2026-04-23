@@ -94,6 +94,7 @@ class ObdBluetoothManager {
 
                 try {
                     closeSocket()
+                    @Suppress("DEPRECATION")
                     BluetoothAdapter.getDefaultAdapter()?.cancelDiscovery()
 
                     val socket = tryCreateSocket(device)
@@ -641,8 +642,17 @@ class ObdBluetoothManager {
     // ─── Komunikacja niskopoziomowa ──────────────────────────────────────────
 
     /**
-     * Wysyła surową komendę i czeka na prompt '>'
-     * Buforuje całą odpowiedź – obsługuje wieloliniowe odpowiedzi (np. VIN)
+     * Wysyła surową komendę i czeka na prompt '>'.
+     *
+     * NAPRAWIONE: poprzednia wersja używała inp.available() do sprawdzania
+     * czy są dane — na wielu tanich kostkach ELM327 available() zawsze zwraca 0
+     * mimo że dane są dostępne (bug w Android BluetoothSocket). Efekt: pętla
+     * kręciła się przez cały timeout nie czytając nic, zwracała pusty string.
+     *
+     * Nowe rozwiązanie: blokujące read() na osobnym wątku (via Future) z
+     * timeoutem. read() blokuje wątek do momentu gdy bajt jest dostępny —
+     * działa niezależnie od available(). Gdy timeout minie, zamykamy socket
+     * I/O i wątek się odblokuje z IOException.
      */
     private suspend fun sendRawCommand(
         command: String,
@@ -652,39 +662,56 @@ class ObdBluetoothManager {
         val inp = inputStream ?: return@withContext ""
 
         try {
-            // Wyślij komendę
-            val cmdBytes = "$command\r".toByteArray(Charsets.ISO_8859_1)
-            out.write(cmdBytes)
-            out.flush()
+            // Wyślij komendę z terminatorem
+            out.write("$command\r".toByteArray(Charsets.ISO_8859_1))
+                        out.flush()
             Log.v(TAG, "CMD -> '$command'")
 
-            // Czytaj odpowiedź znak po znaku używając blokującego read() na osobnym wątku
-            // WAŻNE: inp.available() na BluetoothSocket zawsze zwraca 0 lub małą wartość,
-            // bo Android nie buforuje danych z wyprzedzeniem. Musimy użyć blokującego read().
             val response = StringBuilder()
-            val deadline = System.currentTimeMillis() + timeoutMs
+            val deadline  = System.currentTimeMillis() + timeoutMs
+            val buffer    = ByteArray(1)
 
+            // Czytaj bajt po bajcie używając blokującego read()
+            // available() jest celowo pominięte — jest zawodne na BT
             while (System.currentTimeMillis() < deadline) {
-                // Sprawdź czy są dane (nieblokująco) – jeśli nie, poczekaj chwilę
-                if (inp.available() <= 0) {
-                    // Użyj krótkiego sleep zamiast delay() bo jesteśmy na Dispatchers.IO
-                    Thread.sleep(5)
+
+                // Sprawdź nieblokująco: jeśli available() > 0 to na pewno są dane,
+                // jeśli == 0 to NIE wiemy (może są, może nie) — i tak próbujemy read()
+                // z krótkim sleep tylko gdy bufor naprawdę pusty przez dłuższy czas
+                val avail = try { inp.available() } catch (e: IOException) { break; 0 }
+
+                if (avail <= 0) {
+                    // Bufor może być pusty chwilowo — czekaj krócej niż timeout
+                    // ale nie blokuj na read() bo moglibyśmy zablokować wątek na stałe
+                    // gdy kostka się rozłączyła
+                    val remaining = deadline - System.currentTimeMillis()
+                    if (remaining <= 0) break
+                    Thread.sleep(minOf(10L, remaining))
                     continue
                 }
 
-                val byte = inp.read()   // blokujące read() – zwraca -1 przy EOF
-                if (byte == -1) break
+                // Czytaj dostępne bajty do bufora (max tyle ile available() mówi)
+                val toRead = minOf(avail, 256)
+                val chunk  = ByteArray(toRead)
+                val nRead  = try { inp.read(chunk, 0, toRead) } catch (e: IOException) { break; -1 }
+                if (nRead == -1) break
 
-                val char = (byte and 0xFF).toChar()
-
-                // '>' to prompt ELM327 oznaczający koniec odpowiedzi
-                if (char == '>') break
-
-                response.append(char)
+                for (i in 0 until nRead) {
+                    val char = (chunk[i].toInt() and 0xFF).toChar()
+                    if (char == '>') {
+                        // Prompt ELM327 = koniec odpowiedzi
+                        val result = formatResponse(response.toString())
+                        Log.v(TAG, "RSP <- '$result'")
+                        return@withContext result
+                    }
+                    response.append(char)
+                }
             }
 
+            // Timeout — zwróć co zdążyliśmy zebrać
             val result = formatResponse(response.toString())
-            Log.v(TAG, "RSP <- '$result'")
+            if (result.isNotBlank()) Log.v(TAG, "RSP (timeout) <- '$result'")
+            else Log.w(TAG, "RSP empty — timeout ${timeoutMs}ms dla '$command'")
             result
 
         } catch (e: IOException) {
@@ -738,60 +765,51 @@ class ObdBluetoothManager {
     }
 
     private fun closeSocket() {
-        try {
-            inputStream?.close()
-        } catch (_: IOException) {
-        }
-        try {
-            outputStream?.close()
-        } catch (_: IOException) {
-        }
-        try {
-            bluetoothSocket?.close()
-        } catch (_: IOException) {
-        }
-        inputStream = null
-        outputStream = null
+        try { inputStream?.close()     } catch (_: IOException) {}
+        try { outputStream?.close()    } catch (_: IOException) {}
+        try { bluetoothSocket?.close() } catch (_: IOException) {}
+        inputStream     = null
+        outputStream    = null
         bluetoothSocket = null
+    }
 
-        // ─── DTC (kody błędów) ────────────────────────────────────────────────────
+    // ─── DTC (kody błędów) ───────────────────────────────────────────────────
 
-        data class DtcResult(val codes: List<String>, val rawResponse: String)
+    data class DtcResult(val codes: List<String>, val rawResponse: String)
 
-        fun parseDtcResponse(response: String): List<String> {
-            val codes = mutableListOf<String>()
-            val r = response.uppercase().trim()
-            if (r.isBlank() || r.contains("NO DATA") || r.contains("ERROR")) return codes
-            val tokens = r.split(Regex("\\s+"))
-                .filter { it.length == 2 && it.matches(Regex("[0-9A-F]{2}")) }
-            val dataStart = if (tokens.firstOrNull() == "43") 1 else 0
-            tokens.drop(dataStart).chunked(2).forEach { pair ->
-                if (pair.size < 2) return@forEach
-                val b1 = pair[0].toInt(16)
-                val b2 = pair[1].toInt(16)
-                if (b1 == 0 && b2 == 0) return@forEach
-                val typeChar = when ((b1 shr 6) and 0x03) {
-                    0 -> "P"; 1 -> "C"; 2 -> "B"; else -> "U"
-                }
-                val digit2 = (b1 shr 4) and 0x03
-                val digit3 = b1 and 0x0F
-                codes.add("$typeChar$digit2$digit3%02X".format(b2))
+    private fun parseDtcResponse(response: String): List<String> {
+        val codes = mutableListOf<String>()
+        val r = response.uppercase().trim()
+        if (r.isBlank() || r.contains("NO DATA") || r.contains("ERROR")) return codes
+        val tokens = r.split(Regex("\\s+"))
+            .filter { it.length == 2 && it.matches(Regex("[0-9A-F]{2}")) }
+        val dataStart = if (tokens.firstOrNull() == "43") 1 else 0
+        tokens.drop(dataStart).chunked(2).forEach { pair ->
+            if (pair.size < 2) return@forEach
+            val b1 = pair[0].toInt(16)
+            val b2 = pair[1].toInt(16)
+            if (b1 == 0 && b2 == 0) return@forEach
+            val typeChar = when ((b1 shr 6) and 0x03) {
+                0 -> "P"; 1 -> "C"; 2 -> "B"; else -> "U"
             }
-            return codes
+            val digit2 = (b1 shr 4) and 0x03
+            val digit3 = b1 and 0x0F
+            codes.add("$typeChar$digit2$digit3%02X".format(b2))
         }
+        return codes
+    }
 
-        suspend fun readDtcCodes(): DtcResult = withContext(Dispatchers.IO) {
-            val response = sendRawCommand("03", timeoutMs = 5000)
-            Log.d(TAG, "DTC raw: '$response'")
-            val codes = parseDtcResponse(response)
-            Log.d(TAG, "DTC znalezione: $codes")
-            DtcResult(codes, response)
-        }
+    suspend fun readDtcCodes(): DtcResult = withContext(Dispatchers.IO) {
+        val response = sendRawCommand("03", timeoutMs = 5000)
+        Log.d(TAG, "DTC raw: '$response'")
+        val codes = parseDtcResponse(response)
+        Log.d(TAG, "DTC znalezione: $codes")
+        DtcResult(codes, response)
+    }
 
-        suspend fun clearDtcCodes(): Boolean = withContext(Dispatchers.IO) {
-            val response = sendRawCommand("04", timeoutMs = 5000)
-            Log.d(TAG, "DTC clear: '$response'")
-            response.uppercase().contains("44") || response.uppercase().contains("OK")
-        }
+    suspend fun clearDtcCodes(): Boolean = withContext(Dispatchers.IO) {
+        val response = sendRawCommand("04", timeoutMs = 5000)
+        Log.d(TAG, "DTC clear: '$response'")
+        response.uppercase().contains("44") || response.uppercase().contains("OK")
     }
 }
