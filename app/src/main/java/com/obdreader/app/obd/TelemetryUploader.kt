@@ -43,6 +43,8 @@ class TelemetryUploader(private val context: Context) {
         // Działa z: adb reverse tcp:5032 tcp:5032 (telefon USB)
         // Na fizycznym urządzeniu zmień na adres IP serwera, np. "http://192.168.1.100:5032/..."
 
+    var tokenProvider: (() -> String?)? = null
+
     var uploadIntervalRecords: Int = 30
         // Wyślij batch co N rekordów (przy ~1s/rekord = co ~30 sekund)
 
@@ -58,6 +60,8 @@ class TelemetryUploader(private val context: Context) {
     private var sessionMeta  = JSONObject()
     var lastUploadStatus: UploadStatus = UploadStatus.IDLE
         private set
+
+    var vehicleId: Int = 0
 
     sealed class UploadStatus {
         object IDLE       : UploadStatus()
@@ -87,11 +91,22 @@ class TelemetryUploader(private val context: Context) {
     suspend fun uploadSessionFile(file: File): Boolean = withContext(Dispatchers.IO) {
         if (!uploadOnSessionClose) return@withContext false
         try {
-            val json = file.readText()
-            val ok = postJson(json)
+            // Wczytaj JSON z pliku i dodaj brakujące pola
+            val json = JSONObject(file.readText())
+            json.put("vehicle_id", vehicleId)
+            if (!json.has("closed_at") || json.optString("closed_at").isBlank()) {
+                json.put("closed_at", ISO.format(Date()))
+            }
+            json.remove("batch")       // backend nie zna tego pola
+            json.remove("uploaded_at") // backend nie zna tego pola
+
+            val ok = postJson(json.toString())
             if (ok) {
                 Log.d(TAG, "Sesja wysłana: ${file.name}")
-                lastUploadStatus = UploadStatus.SUCCESS(recordsSent = 0, timestamp = ISO.format(Date()))
+                lastUploadStatus = UploadStatus.SUCCESS(
+                    recordsSent = json.optInt("record_count"),
+                    timestamp   = ISO.format(Date())
+                )
                 true
             } else {
                 saveToRetry(file)
@@ -143,17 +158,20 @@ class TelemetryUploader(private val context: Context) {
 
         lastUploadStatus = UploadStatus.UPLOADING
 
-        // Zbuduj payload identyczny jak plik sesji
+        val now = ISO.format(Date())
+
         val payload = JSONObject().apply {
+            put("vehicle_id",   vehicleId)                    // ← NOWE: wymagane przez backend
             put("session_id",   meta.optString("session_id"))
             put("vin",          meta.optString("vin"))
             put("started_at",   meta.optString("started_at"))
-            put("uploaded_at",  ISO.format(Date()))
+            put("closed_at",    now)                          // ← NOWE: wymagane przez backend
+            put("app_version",  "1.0")
             put("record_count", records.size)
-            put("batch",        true)
             val arr = org.json.JSONArray()
             records.forEach { arr.put(it) }
             put("records", arr)
+            // usunięte: "uploaded_at" i "batch" - backend ich nie zna
         }
 
         val ok = try {
@@ -167,15 +185,14 @@ class TelemetryUploader(private val context: Context) {
             Log.d(TAG, "Batch wysłany: ${records.size} rekordów")
             lastUploadStatus = UploadStatus.SUCCESS(
                 recordsSent = records.size,
-                timestamp   = ISO.format(Date())
+                timestamp   = now
             )
         } else {
             Log.w(TAG, "Batch nieudany – zapisuję do retry")
             lastUploadStatus = UploadStatus.FAILED(
-                error      = "HTTP error lub brak sieci",
-                willRetry  = true
+                error     = "HTTP error lub brak sieci",
+                willRetry = true
             )
-            // Zapisz do retry jako plik
             saveJsonToRetry(payload.toString())
         }
         ok
@@ -190,14 +207,18 @@ class TelemetryUploader(private val context: Context) {
         val conn = url.openConnection() as HttpURLConnection
         return try {
             conn.apply {
-                requestMethod       = "POST"
-                doOutput            = true
-                doInput             = true
-                connectTimeout      = CONNECT_TIMEOUT_MS
-                readTimeout         = READ_TIMEOUT_MS
-                setRequestProperty("Content-Type",  "application/json; charset=utf-8")
-                setRequestProperty("Accept",        "application/json")
-                setRequestProperty("User-Agent",    "OBD2Reader-Android/1.0")
+                requestMethod = "POST"
+                doOutput = true
+                doInput = true
+                connectTimeout = CONNECT_TIMEOUT_MS
+                readTimeout = READ_TIMEOUT_MS
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("User-Agent", "OBD2Reader-Android/1.0")
+                // ← NOWE: dodaj token JWT jeśli dostępny
+                tokenProvider?.invoke()?.let {
+                    setRequestProperty("Authorization", "Bearer $it")
+                }
             }
 
             OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { writer ->
@@ -206,7 +227,19 @@ class TelemetryUploader(private val context: Context) {
             }
 
             val code = conn.responseCode
-            Log.d(TAG, "POST $backendUrl → HTTP $code")
+            // ← NOWE: loguj kod + body błędu żeby widzieć co zwraca backend
+            if (code !in 200..299) {
+                val errBody = try {
+                    conn.errorStream?.bufferedReader()?.readText() ?: "(brak body)"
+                } catch (e: Exception) { "(błąd odczytu body)" }
+                Log.e(TAG, "POST $backendUrl → HTTP $code | $errBody")
+                lastUploadStatus = UploadStatus.FAILED(
+                    error = "HTTP $code: $errBody",
+                    willRetry = true
+                )
+            } else {
+                Log.d(TAG, "POST $backendUrl → HTTP $code OK")
+            }
 
             code in 200..299
         } catch (e: Exception) {

@@ -111,7 +111,6 @@ fun AppRoot(viewModel: ObdViewModel) {
     val authError by viewModel.authError.collectAsState()
     val isGuest by viewModel.isGuest.collectAsState()
 
-    // Dialogi pojazdów – renderowane nad całością
     val showAddVehicle by viewModel.showAddVehicleDialog.collectAsState()
     val isAddingVehicle by viewModel.isAddingVehicle.collectAsState()
     val addVehicleError by viewModel.addVehicleError.collectAsState()
@@ -152,13 +151,13 @@ fun AppRoot(viewModel: ObdViewModel) {
         }
     }
 
-    // Dialog dodawania pojazdu (może być widoczny z ekranu pojazdów i sesji)
+    // Dialog dodawania pojazdu — globalny, widoczny z każdego ekranu
     if (showAddVehicle) {
         AddVehicleDialog(
             isLoading = isAddingVehicle,
             errorMessage = addVehicleError,
-            onAdd = { name, make, model, year ->
-                viewModel.addVehicle(name, make, model, year)
+            onAdd = { name, make, model, year, fuelType, engineDispl, cylinders, tank, mass ->
+                viewModel.addVehicle(name, make, model, year, fuelType, engineDispl, cylinders, tank, mass)
             },
             onDismiss = { viewModel.hideAddVehicle() }
         )
@@ -214,7 +213,6 @@ fun ObdMainScreen(
     val sessionFiles by viewModel.sessionFiles.collectAsState()
     val uploadStatus by viewModel.uploadStatus.collectAsState()
 
-    // Pojazdy
     val vehicles by viewModel.vehicles.collectAsState()
     val isLoadingVehicles by viewModel.isLoadingVehicles.collectAsState()
     val vehicleError by viewModel.vehicleError.collectAsState()
@@ -227,7 +225,6 @@ fun ObdMainScreen(
     val backendUrl = remember { mutableStateOf(viewModel.uploader.backendUrl) }
     val pendingRetryCount = remember { mutableStateOf(viewModel.uploader.pendingRetryCount()) }
 
-    // Aktywna zakładka – indeks w zależności od stanu połączenia
     var activeTab by remember(isConnected) { mutableStateOf(0) }
 
     Box(
@@ -237,7 +234,6 @@ fun ObdMainScreen(
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
 
-            // ─ Header ─────────────────────────────────────────────────────────
             ObdHeader(
                 connectionState = connectionState,
                 vinInfo = vinInfo,
@@ -253,28 +249,21 @@ fun ObdMainScreen(
                 onLogout = { viewModel.logout() }
             )
 
-            // ─ Zawartość ekranu ───────────────────────────────────────────────
             AnimatedContent(
                 targetState = isConnected,
-                transitionSpec = {
-                    fadeIn() togetherWith fadeOut()
-                },
+                transitionSpec = { fadeIn() togetherWith fadeOut() },
                 label = "connection_content"
             ) { connected ->
                 if (!connected) {
-                    // ══ PRZED POŁĄCZENIEM ══════════════════════════════════════
                     if (isGuest) {
-                        // Gość: tylko ekran BT, bez zakładek
                         GuestPreConnectScreen(
                             connectionState = connectionState,
                             onConnect = onConnectRequest
                         )
                     } else {
-                        // Zalogowany: zakładki Moje pojazdy | Połącz z OBD
                         PreConnectTabs(
                             activeTab = activeTab,
                             onTabChange = { activeTab = it },
-                            // Zakładka Pojazdy
                             vehicles = vehicles,
                             isLoadingVehicles = isLoadingVehicles,
                             vehicleError = vehicleError,
@@ -284,21 +273,19 @@ fun ObdMainScreen(
                             vehicleToDelete = vehicleToDelete,
                             isDeletingVehicle = isDeletingVehicle,
                             onAddVehicleClick = { viewModel.showAddVehicle() },
-                            onAddVehicle = { name, make, model, year ->
-                                viewModel.addVehicle(name, make, model, year)
+                            onAddVehicle = { name, make, model, year, fuelType, engineDispl, cylinders, tank, mass ->
+                                viewModel.addVehicle(name, make, model, year, fuelType, engineDispl, cylinders, tank, mass)
                             },
                             onDismissAdd = { viewModel.hideAddVehicle() },
                             onDeleteRequest = { viewModel.requestDeleteVehicle(it) },
                             onDeleteConfirm = { viewModel.confirmDeleteVehicle() },
                             onDeleteCancel = { viewModel.cancelDeleteVehicle() },
                             onRefreshVehicles = { viewModel.loadVehicles() },
-                            // Zakładka BT
                             connectionState = connectionState,
                             onConnect = onConnectRequest
                         )
                     }
                 } else {
-                    // ══ PO POŁĄCZENIU ══════════════════════════════════════════
                     PostConnectContent(
                         viewModel = viewModel,
                         isGuest = isGuest,
@@ -364,7 +351,6 @@ fun GuestPreConnectScreen(
 fun PreConnectTabs(
     activeTab: Int,
     onTabChange: (Int) -> Unit,
-    // Pojazdy
     vehicles: List<com.obdreader.app.auth.AuthManager.Vehicle>,
     isLoadingVehicles: Boolean,
     vehicleError: String?,
@@ -374,18 +360,16 @@ fun PreConnectTabs(
     vehicleToDelete: com.obdreader.app.auth.AuthManager.Vehicle?,
     isDeletingVehicle: Boolean,
     onAddVehicleClick: () -> Unit,
-    onAddVehicle: (String, String, String, String) -> Unit,
+    onAddVehicle: (String, String, String, Int, String, Double, Int, Int, Int) -> Unit,
     onDismissAdd: () -> Unit,
     onDeleteRequest: (com.obdreader.app.auth.AuthManager.Vehicle) -> Unit,
     onDeleteConfirm: () -> Unit,
     onDeleteCancel: () -> Unit,
     onRefreshVehicles: () -> Unit,
-    // BT
     connectionState: ObdBluetoothManager.ConnectionState,
     onConnect: (BluetoothDevice) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        // Pasek zakładek
         TabRow(
             selectedTabIndex = activeTab,
             containerColor = CardBackground,
@@ -444,7 +428,6 @@ fun PreConnectTabs(
             }
         }
 
-        // Treść zakładki
         when (activeTab) {
             0 -> VehiclesScreen(
                 vehicles = vehicles,
@@ -504,16 +487,12 @@ fun PostConnectContent(
     onAddVehicleClick: () -> Unit,
     onRefreshVehicles: () -> Unit
 ) {
-    // Zakładki zależne od trybu:
-    // Zalogowany: Dashboard | Czujniki | Logi | Sesje
-    // Gość:       Dashboard | Czujniki | Logi
     val tabs = if (isGuest) {
         listOf("Dashboard", "Czujniki", "Logi")
     } else {
         listOf("Dashboard", "Czujniki", "Logi", "Sesje")
     }
 
-    // Upewnij się, że activeTab nie wychodzi poza zakres
     val safeTab = activeTab.coerceIn(0, tabs.lastIndex)
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -635,77 +614,53 @@ fun ObdHeader(
             horizontalArrangement = Arrangement.SpaceBetween,
             modifier = Modifier.fillMaxWidth()
         ) {
-            // Lewa strona
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     "OBD2 Reader",
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Black,
-                    color = TextPrimary,
-                    letterSpacing = 0.5.sp,
-                    maxLines = 1
+                    fontSize = 22.sp, fontWeight = FontWeight.Black,
+                    color = TextPrimary, letterSpacing = 0.5.sp, maxLines = 1
                 )
                 if (isConnected) {
                     Text(
-                        deviceName,
-                        fontSize = 12.sp,
-                        color = AccentGreen,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        deviceName, fontSize = 12.sp, color = AccentGreen,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
                 }
                 if (displayVin.isNotBlank()) {
                     Text(
-                        "VIN: $displayVin",
-                        fontSize = 10.sp,
-                        color = TextSecondary,
-                        fontFamily = FontFamily.Monospace,
-                        maxLines = 1
+                        "VIN: $displayVin", fontSize = 10.sp, color = TextSecondary,
+                        fontFamily = FontFamily.Monospace, maxLines = 1
                     )
                 }
-                // Status konta
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     if (isGuest) {
                         Icon(
-                            Icons.Default.PersonOutline,
-                            contentDescription = null,
-                            tint = AccentOrange.copy(0.7f),
-                            modifier = Modifier.size(10.dp)
+                            Icons.Default.PersonOutline, null,
+                            tint = AccentOrange.copy(0.7f), modifier = Modifier.size(10.dp)
                         )
-                        Text(
-                            "Tryb gościa",
-                            fontSize = 10.sp,
-                            color = AccentOrange.copy(0.7f)
-                        )
+                        Text("Tryb gościa", fontSize = 10.sp, color = AccentOrange.copy(0.7f))
                     } else if (isLoggedIn && !userEmail.isNullOrBlank()) {
                         Icon(
-                            Icons.Default.Person,
-                            contentDescription = null,
-                            tint = AccentBlue.copy(0.7f),
-                            modifier = Modifier.size(10.dp)
+                            Icons.Default.Person, null,
+                            tint = AccentBlue.copy(0.7f), modifier = Modifier.size(10.dp)
                         )
                         Text(
-                            userEmail,
-                            fontSize = 10.sp,
-                            color = AccentBlue.copy(0.7f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            userEmail, fontSize = 10.sp, color = AccentBlue.copy(0.7f),
+                            maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
             }
 
-            // Prawa strona: przyciski
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.padding(start = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (isConnected) {
-                    // Pauza / Start skanowania
                     IconButton(
                         onClick = onToggleScan,
                         modifier = Modifier
@@ -716,12 +671,11 @@ fun ObdHeader(
                     ) {
                         Icon(
                             if (isScanning) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = null,
+                            null,
                             tint = if (isScanning) AccentGreen else TextSecondary,
                             modifier = Modifier.size(18.dp)
                         )
                     }
-                    // Rozłącz
                     IconButton(
                         onClick = onDisconnect,
                         modifier = Modifier
@@ -730,15 +684,12 @@ fun ObdHeader(
                             .border(1.dp, AccentRed.copy(alpha = 0.5f), CircleShape)
                     ) {
                         Icon(
-                            Icons.Default.BluetoothDisabled,
-                            contentDescription = null,
-                            tint = AccentRed,
-                            modifier = Modifier.size(18.dp)
+                            Icons.Default.BluetoothDisabled, null,
+                            tint = AccentRed, modifier = Modifier.size(18.dp)
                         )
                     }
                 }
 
-                // Wyloguj / wróć do logowania
                 IconButton(
                     onClick = { showLogoutConfirm = true },
                     modifier = Modifier
@@ -762,8 +713,7 @@ fun ObdHeader(
                         )
                 ) {
                     Icon(
-                        Icons.Default.Logout,
-                        contentDescription = "Wyloguj / zmień konto",
+                        Icons.Default.Logout, null,
                         tint = when {
                             isGuest -> AccentOrange
                             isLoggedIn -> AccentBlue
@@ -777,7 +727,7 @@ fun ObdHeader(
     }
 }
 
-// ─── Ekran parowania (zaktualizowany o opcjonalny baner błędu) ────────────────
+// ─── Ekran parowania ──────────────────────────────────────────────────────────
 
 @Composable
 fun DeviceSelectionScreen(
@@ -823,28 +773,21 @@ fun DeviceSelectionScreen(
     }
 
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
+        modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 "Połącz z kostką OBD2",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary
+                fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary
             )
             Text(
                 "Sparuj kostkę OBD2 w ustawieniach Bluetooth, potem wróć tutaj",
-                fontSize = 13.sp,
-                color = TextSecondary,
-                modifier = Modifier.padding(top = 4.dp)
+                fontSize = 13.sp, color = TextSecondary, modifier = Modifier.padding(top = 4.dp)
             )
         }
 
-        // Baner błędu połączenia
         if (errorBanner != null) {
             item {
                 Row(
@@ -867,11 +810,8 @@ fun DeviceSelectionScreen(
             item {
                 Text(
                     "WYKRYTE KOSTKI OBD",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = AccentGreen,
-                    letterSpacing = 1.5.sp,
-                    modifier = Modifier.padding(top = 8.dp)
+                    fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AccentGreen,
+                    letterSpacing = 1.5.sp, modifier = Modifier.padding(top = 8.dp)
                 )
             }
             items(obdDevices) { device ->
@@ -884,11 +824,8 @@ fun DeviceSelectionScreen(
             item {
                 Text(
                     "INNE SPAROWANE URZĄDZENIA",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextSecondary,
-                    letterSpacing = 1.5.sp,
-                    modifier = Modifier.padding(top = 8.dp)
+                    fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextSecondary,
+                    letterSpacing = 1.5.sp, modifier = Modifier.padding(top = 8.dp)
                 )
             }
             items(otherDevices) { device ->
@@ -900,23 +837,15 @@ fun DeviceSelectionScreen(
             item {
                 Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Default.BluetoothDisabled, contentDescription = null,
-                            tint = AccentOrange, modifier = Modifier.size(48.dp)
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Icon(Icons.Default.BluetoothDisabled, null, tint = AccentOrange, modifier = Modifier.size(48.dp))
+                        Spacer(Modifier.height(12.dp))
                         Text("Brak uprawnienia Bluetooth", color = TextPrimary, fontWeight = FontWeight.Bold)
-                        Text(
-                            "Aplikacja potrzebuje dostępu do Bluetooth.",
-                            color = TextSecondary, fontSize = 13.sp,
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Aplikacja potrzebuje dostępu do Bluetooth.", color = TextSecondary, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+                        Spacer(Modifier.height(16.dp))
                         Button(
                             onClick = {
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
                                     permissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
-                                }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
                         ) {
@@ -929,17 +858,10 @@ fun DeviceSelectionScreen(
             item {
                 Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Default.Bluetooth, contentDescription = null,
-                            tint = TextSecondary, modifier = Modifier.size(48.dp)
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Icon(Icons.Default.Bluetooth, null, tint = TextSecondary, modifier = Modifier.size(48.dp))
+                        Spacer(Modifier.height(12.dp))
                         Text("Brak sparowanych urządzeń", color = TextSecondary)
-                        Text(
-                            "Sparuj kostkę OBD2 w Ustawienia → Bluetooth",
-                            color = TextSecondary, fontSize = 12.sp,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
+                        Text("Sparuj kostkę OBD2 w Ustawienia → Bluetooth", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
                     }
                 }
             }
@@ -958,34 +880,21 @@ fun DeviceCard(device: BluetoothDevice, isObd: Boolean, onConnect: (BluetoothDev
         border = if (isObd) BorderStroke(1.dp, AccentGreen.copy(alpha = 0.4f)) else null
     ) {
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Default.Bluetooth, contentDescription = null,
-                tint = if (isObd) AccentGreen else AccentBlue,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.width(12.dp))
+            Icon(Icons.Default.Bluetooth, null, tint = if (isObd) AccentGreen else AccentBlue, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    device.name ?: "Nieznane urządzenie",
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary
-                )
-                Text(
-                    device.address, fontSize = 12.sp,
-                    color = TextSecondary, fontFamily = FontFamily.Monospace
-                )
+                Text(device.name ?: "Nieznane urządzenie", fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Text(device.address, fontSize = 12.sp, color = TextSecondary, fontFamily = FontFamily.Monospace)
             }
             if (isObd) {
                 Text(
-                    "OBD", fontSize = 11.sp, color = AccentGreen,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .background(AccentGreen.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                    "OBD", fontSize = 11.sp, color = AccentGreen, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.background(AccentGreen.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
                         .padding(horizontal = 8.dp, vertical = 3.dp)
                 )
             }
-            Spacer(modifier = Modifier.width(8.dp))
-            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = TextSecondary)
+            Spacer(Modifier.width(8.dp))
+            Icon(Icons.Default.ChevronRight, null, tint = TextSecondary)
         }
     }
 }
@@ -997,7 +906,7 @@ fun ConnectingScreen(message: String) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             CircularProgressIndicator(color = AccentGreen, modifier = Modifier.size(56.dp))
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(Modifier.height(16.dp))
             Text(message, color = TextPrimary, fontSize = 16.sp)
         }
     }
@@ -1018,10 +927,9 @@ fun DashboardTab(sensorData: Map<ObdCommand, ObdResponseParser.ParsedValue>) {
                 BigMetricCard(ObdCommand.VEHICLE_SPEED, sensorData[ObdCommand.VEHICLE_SPEED], Modifier.weight(1f), AccentBlue)
             }
         }
-
         val secondaryMetrics = listOf(
             ObdCommand.COOLANT_TEMP, ObdCommand.FUEL_LEVEL,
-            ObdCommand.ENGINE_LOAD,  ObdCommand.INTAKE_TEMP,
+            ObdCommand.ENGINE_LOAD, ObdCommand.INTAKE_TEMP
         )
         secondaryMetrics.chunked(2).forEach { pair ->
             item {
@@ -1031,7 +939,6 @@ fun DashboardTab(sensorData: Map<ObdCommand, ObdResponseParser.ParsedValue>) {
                 }
             }
         }
-
         val statusParsed = sensorData[ObdCommand.STATUS]
         if (statusParsed != null) {
             item { StatusCard(statusParsed) }
@@ -1056,18 +963,13 @@ fun BigMetricCard(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(accentColor.copy(alpha = if (hasValue) 0.08f else 0.02f), Color.Transparent)
-                    )
-                )
+                .background(Brush.verticalGradient(
+                    listOf(accentColor.copy(alpha = if (hasValue) 0.08f else 0.02f), Color.Transparent)
+                ))
                 .padding(14.dp)
         ) {
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    command.cmdName.uppercase(), fontSize = 11.sp, color = accentColor,
-                    fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1
-                )
+                Text(command.cmdName.uppercase(), fontSize = 11.sp, color = accentColor, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1)
                 Column {
                     Text(
                         if (hasValue) parsed!!.displayValue else "--",
@@ -1075,10 +977,7 @@ fun BigMetricCard(
                         color = if (hasValue) TextPrimary else TextSecondary,
                         lineHeight = 38.sp, maxLines = 1, softWrap = false
                     )
-                    Text(
-                        command.unit, fontSize = 12.sp, color = accentColor.copy(alpha = 0.8f),
-                        fontWeight = FontWeight.Medium
-                    )
+                    Text(command.unit, fontSize = 12.sp, color = accentColor.copy(alpha = 0.8f), fontWeight = FontWeight.Medium)
                 }
             }
         }
@@ -1086,43 +985,20 @@ fun BigMetricCard(
 }
 
 @Composable
-fun SmallMetricCard(
-    command: ObdCommand,
-    parsed: ObdResponseParser.ParsedValue?,
-    modifier: Modifier = Modifier
-) {
+fun SmallMetricCard(command: ObdCommand, parsed: ObdResponseParser.ParsedValue?, modifier: Modifier = Modifier) {
     val accentColor = when (command) {
         ObdCommand.FUEL_LEVEL -> AccentBlue
         ObdCommand.CONTROL_MODULE_VOLTAGE -> Color(0xFFFFD700)
         else -> TextSecondary
     }
     val hasValue = parsed != null && parsed.displayValue != "--" && parsed.displayValue != "Brak danych"
-
-    Card(
-        modifier = modifier.height(86.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBackground)
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(12.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                command.cmdName, fontSize = 11.sp, color = TextSecondary,
-                maxLines = 1, overflow = TextOverflow.Ellipsis
-            )
+    Card(modifier = modifier.height(86.dp), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = CardBackground)) {
+        Column(modifier = Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.SpaceBetween) {
+            Text(command.cmdName, fontSize = 11.sp, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(
-                    if (hasValue) parsed!!.displayValue else "--",
-                    fontSize = 24.sp, fontWeight = FontWeight.Bold,
-                    color = if (hasValue) TextPrimary else TextSecondary,
-                    maxLines = 1, softWrap = false
-                )
+                Text(if (hasValue) parsed!!.displayValue else "--", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = if (hasValue) TextPrimary else TextSecondary, maxLines = 1, softWrap = false)
                 if (command.unit.isNotBlank() && command.unit != "-") {
-                    Text(
-                        command.unit, fontSize = 11.sp, color = accentColor,
-                        modifier = Modifier.padding(bottom = 3.dp)
-                    )
+                    Text(command.unit, fontSize = 11.sp, color = accentColor, modifier = Modifier.padding(bottom = 3.dp))
                 }
             }
         }
@@ -1134,26 +1010,13 @@ fun StatusCard(parsed: ObdResponseParser.ParsedValue) {
     val isMilOn = parsed.displayValue.contains("MIL ON")
     val bg = if (isMilOn) AccentRed.copy(alpha = 0.12f) else AccentGreen.copy(alpha = 0.07f)
     val border = if (isMilOn) AccentRed.copy(alpha = 0.5f) else AccentGreen.copy(alpha = 0.3f)
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = bg),
-        border = BorderStroke(1.dp, border)
-    ) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = bg), border = BorderStroke(1.dp, border)) {
         Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                if (isMilOn) Icons.Default.Warning else Icons.Default.CheckCircle,
-                contentDescription = null,
-                tint = if (isMilOn) AccentRed else AccentGreen,
-                modifier = Modifier.size(22.dp)
-            )
+            Icon(if (isMilOn) Icons.Default.Warning else Icons.Default.CheckCircle, null, tint = if (isMilOn) AccentRed else AccentGreen, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(10.dp))
             Column {
                 Text("Status OBD", fontSize = 11.sp, color = TextSecondary)
-                Text(
-                    parsed.displayValue, fontWeight = FontWeight.Bold, fontSize = 15.sp,
-                    color = if (isMilOn) AccentRed else AccentGreen
-                )
+                Text(parsed.displayValue, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = if (isMilOn) AccentRed else AccentGreen)
             }
         }
     }
@@ -1169,44 +1032,20 @@ fun SensorsTab(
     onCategorySelect: (ObdCategory?) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            item {
-                CategoryChip(
-                    label = "Wszystkie",
-                    selected = selectedCategory == null,
-                    onClick = { onCategorySelect(null) }
-                )
-            }
+        LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            item { CategoryChip(label = "Wszystkie", selected = selectedCategory == null, onClick = { onCategorySelect(null) }) }
             items(ObdCategory.values().toList()) { category ->
-                CategoryChip(
-                    label = category.displayName,
-                    selected = selectedCategory == category,
-                    onClick = { onCategorySelect(category) }
-                )
+                CategoryChip(label = category.displayName, selected = selectedCategory == category, onClick = { onCategorySelect(category) })
             }
         }
-
         val displayCommands = if (selectedCategory != null) {
-            supportedCommands.filter { it in selectedCategory.pids }
-                .ifEmpty { selectedCategory.pids }
+            supportedCommands.filter { it in selectedCategory.pids }.ifEmpty { selectedCategory.pids }
         } else {
             supportedCommands.ifEmpty { ObdCommand.values().toList() }
         }
-
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
+        LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items(displayCommands, key = { it.cmdName }) { cmd ->
-                SensorRow(
-                    command = cmd,
-                    parsed = sensorData[cmd],
-                    isSupported = cmd in supportedCommands
-                )
+                SensorRow(command = cmd, parsed = sensorData[cmd], isSupported = cmd in supportedCommands)
             }
         }
     }
@@ -1218,52 +1057,23 @@ fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .clip(RoundedCornerShape(20.dp))
             .background(if (selected) AccentGreen.copy(alpha = 0.2f) else CardBackground)
-            .border(
-                1.dp,
-                if (selected) AccentGreen else TextSecondary.copy(alpha = 0.3f),
-                RoundedCornerShape(20.dp)
-            )
+            .border(1.dp, if (selected) AccentGreen else TextSecondary.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 7.dp)
     ) {
-        Text(
-            label, fontSize = 13.sp,
-            color = if (selected) AccentGreen else TextSecondary,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
-        )
+        Text(label, fontSize = 13.sp, color = if (selected) AccentGreen else TextSecondary, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
     }
 }
 
 @Composable
-fun SensorRow(
-    command: ObdCommand,
-    parsed: ObdResponseParser.ParsedValue?,
-    isSupported: Boolean
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSupported) CardBackground else CardBackground.copy(alpha = 0.5f)
-        )
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
+fun SensorRow(command: ObdCommand, parsed: ObdResponseParser.ParsedValue?, isSupported: Boolean) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp), colors = CardDefaults.cardColors(containerColor = if (isSupported) CardBackground else CardBackground.copy(alpha = 0.5f))) {
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    command.cmdName, fontSize = 14.sp, fontWeight = FontWeight.Medium,
-                    color = if (isSupported) TextPrimary else TextSecondary
-                )
-                Text(
-                    "PID: ${command.mode}${command.pid} • ${command.description}",
-                    fontSize = 11.sp, color = TextSecondary,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis
-                )
+                Text(command.cmdName, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = if (isSupported) TextPrimary else TextSecondary)
+                Text("PID: ${command.mode}${command.pid} • ${command.description}", fontSize = 11.sp, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(Modifier.width(12.dp))
             Column(horizontalAlignment = Alignment.End) {
                 Text(
                     parsed?.displayValue ?: if (isSupported) "..." else "N/A",
@@ -1286,33 +1096,20 @@ fun SensorRow(
 
 @Composable
 fun LogsTab(logMessages: List<String>) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-        contentPadding = PaddingValues(vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp), contentPadding = PaddingValues(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (logMessages.isEmpty()) {
-            item {
-                Box(
-                    modifier = Modifier.fillMaxWidth().padding(32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("Brak wpisów w logu", color = TextSecondary)
-                }
-            }
+            item { Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { Text("Brak wpisów w logu", color = TextSecondary) } }
         }
         items(logMessages) { msg ->
             Text(
-                msg,
-                fontSize = 12.sp,
+                msg, fontSize = 12.sp,
                 color = when {
                     msg.contains("Błąd") || msg.contains("Nie udało") -> AccentRed
                     msg.contains("Połączono") || msg.contains("SUKCES") -> AccentGreen
                     msg.contains("Skanowanie") -> AccentBlue
                     else -> TextSecondary
                 },
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.fillMaxWidth()
+                fontFamily = FontFamily.Monospace, modifier = Modifier.fillMaxWidth()
             )
         }
     }
@@ -1361,423 +1158,96 @@ fun SessionsTab(
                     Text("Adres endpointu POST:", fontSize = 12.sp, color = TextSecondary)
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
-                        value = urlInput,
-                        onValueChange = { urlInput = it },
-                        singleLine = true,
-                        textStyle = androidx.compose.ui.text.TextStyle(
-                            color = TextPrimary,
-                            fontSize = 13.sp,
-                            fontFamily = FontFamily.Monospace
-                        ),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = AccentGreen,
-                            unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f)
-                        ),
+                        value = urlInput, onValueChange = { urlInput = it }, singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(color = TextPrimary, fontSize = 13.sp, fontFamily = FontFamily.Monospace),
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = AccentGreen, unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f)),
                         placeholder = { Text("https://api.example.com/api/...", fontSize = 12.sp) }
                     )
                 }
             },
-            confirmButton = {
-                TextButton(onClick = { onUrlChange(urlInput); showUrlDialog = false }) {
-                    Text("Zapisz", color = AccentGreen, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showUrlDialog = false }) {
-                    Text("Anuluj", color = TextSecondary)
-                }
-            }
+            confirmButton = { TextButton(onClick = { onUrlChange(urlInput); showUrlDialog = false }) { Text("Zapisz", color = AccentGreen, fontWeight = FontWeight.Bold) } },
+            dismissButton = { TextButton(onClick = { showUrlDialog = false }) { Text("Anuluj", color = TextSecondary) } }
         )
     }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 12.dp),
-        contentPadding = PaddingValues(vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        // ── Status uploadu ──
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp), contentPadding = PaddingValues(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             val (uploadColor, uploadText, uploadSub) = when (val s = uploadStatus) {
-                is TelemetryUploader.UploadStatus.IDLE ->
-                    Triple(TextSecondary, "Oczekiwanie", "Nie wysłano jeszcze danych")
-                is TelemetryUploader.UploadStatus.UPLOADING ->
-                    Triple(AccentBlue, "Wysyłanie...", "Trwa transfer danych")
-                is TelemetryUploader.UploadStatus.SUCCESS ->
-                    Triple(AccentGreen, "✓ Wysłano ${s.recordsSent} rekordów", s.timestamp.take(19).replace("T", " "))
-                is TelemetryUploader.UploadStatus.FAILED ->
-                    Triple(AccentRed, "✗ Błąd: ${s.error}", if (s.willRetry) "Zapisano do retry" else "")
+                is TelemetryUploader.UploadStatus.IDLE -> Triple(TextSecondary, "Oczekiwanie", "Nie wysłano jeszcze danych")
+                is TelemetryUploader.UploadStatus.UPLOADING -> Triple(AccentBlue, "Wysyłanie...", "Trwa transfer danych")
+                is TelemetryUploader.UploadStatus.SUCCESS -> Triple(AccentGreen, "✓ Wysłano ${s.recordsSent} rekordów", s.timestamp.take(19).replace("T", " "))
+                is TelemetryUploader.UploadStatus.FAILED -> Triple(AccentRed, "✗ Błąd: ${s.error}", if (s.willRetry) "Zapisano do retry" else "")
             }
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = uploadColor.copy(alpha = 0.08f)),
-                border = BorderStroke(1.dp, uploadColor.copy(alpha = 0.4f))
-            ) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = uploadColor.copy(alpha = 0.08f)), border = BorderStroke(1.dp, uploadColor.copy(alpha = 0.4f))) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                         Column(Modifier.weight(1f)) {
-                            Text(
-                                "STATUS UPLOADU", fontSize = 10.sp,
-                                color = TextSecondary, letterSpacing = 1.sp
-                            )
-                            Text(
-                                uploadText, fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold, color = uploadColor
-                            )
-                            if (uploadSub.isNotBlank()) {
-                                Text(uploadSub, fontSize = 11.sp, color = TextSecondary)
-                            }
+                            Text("STATUS UPLOADU", fontSize = 10.sp, color = TextSecondary, letterSpacing = 1.sp)
+                            Text(uploadText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = uploadColor)
+                            if (uploadSub.isNotBlank()) Text(uploadSub, fontSize = 11.sp, color = TextSecondary)
                         }
                         if (pendingRetryCount > 0) {
                             Column(horizontalAlignment = Alignment.End) {
                                 Text("$pendingRetryCount do retry", fontSize = 11.sp, color = AccentOrange)
-                                TextButton(onClick = onRetryUploads) {
-                                    Text("Wyślij teraz", color = AccentOrange, fontSize = 12.sp)
-                                }
+                                TextButton(onClick = onRetryUploads) { Text("Wyślij teraz", color = AccentOrange, fontSize = 12.sp) }
                             }
                         }
                     }
                 }
             }
         }
-
-        // ── URL backendu ──
         item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { showUrlDialog = true },
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = CardBackground)
-            ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+            Card(modifier = Modifier.fillMaxWidth().clickable { showUrlDialog = true }, shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = CardBackground)) {
+                Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                     Column(Modifier.weight(1f)) {
-                        Text(
-                            "ENDPOINT BACKENDU", fontSize = 10.sp,
-                            color = TextSecondary, letterSpacing = 1.sp
-                        )
-                        Text(
-                            backendUrl, fontSize = 12.sp, color = AccentBlue,
-                            fontFamily = FontFamily.Monospace,
-                            maxLines = 2, overflow = TextOverflow.Ellipsis
-                        )
+                        Text("ENDPOINT BACKENDU", fontSize = 10.sp, color = TextSecondary, letterSpacing = 1.sp)
+                        Text(backendUrl, fontSize = 12.sp, color = AccentBlue, fontFamily = FontFamily.Monospace, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
-                    Icon(
-                        Icons.Default.Edit, contentDescription = null,
-                        tint = TextSecondary,
-                        modifier = Modifier
-                            .size(18.dp)
-                            .padding(start = 4.dp)
-                    )
+                    Icon(Icons.Default.Edit, null, tint = TextSecondary, modifier = Modifier.size(18.dp).padding(start = 4.dp))
                 }
             }
         }
-
-        // ── Status logowania ──
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isLogging) AccentGreen.copy(alpha = 0.08f) else CardBackground
-                ),
-                border = BorderStroke(
-                    1.dp,
-                    if (isLogging) AccentGreen.copy(0.4f) else TextSecondary.copy(0.15f)
-                )
-            ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = if (isLogging) AccentGreen.copy(alpha = 0.08f) else CardBackground), border = BorderStroke(1.dp, if (isLogging) AccentGreen.copy(0.4f) else TextSecondary.copy(0.15f))) {
+                Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(if (isLogging) AccentGreen else TextSecondary)
-                        )
+                        Box(Modifier.size(8.dp).clip(CircleShape).background(if (isLogging) AccentGreen else TextSecondary))
                         Spacer(Modifier.width(10.dp))
                         Column {
-                            Text(
-                                if (isLogging) "Logowanie aktywne" else "Logowanie nieaktywne",
-                                fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
-                                color = if (isLogging) AccentGreen else TextSecondary
-                            )
-                            Text(
-                                "Dane zapisywane do JSON + wysyłane na backend",
-                                fontSize = 11.sp, color = TextSecondary
-                            )
+                            Text(if (isLogging) "Logowanie aktywne" else "Logowanie nieaktywne", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = if (isLogging) AccentGreen else TextSecondary)
+                            Text("Dane zapisywane do JSON + wysyłane na backend", fontSize = 11.sp, color = TextSecondary)
                         }
                     }
-                    if (isLogging) {
-                        TextButton(onClick = onStopLogging) {
-                            Text("Zatrzymaj", color = AccentRed, fontSize = 13.sp)
-                        }
-                    }
+                    if (isLogging) { TextButton(onClick = onStopLogging) { Text("Zatrzymaj", color = AccentRed, fontSize = 13.sp) } }
                 }
             }
         }
-
-        // ── Pojazdy (skrócony widok w zakładce Sesje) ──
         item {
             VehiclesSection(
-                vehicles = vehicles,
-                isLoggedIn = isLoggedIn,
-                isLoadingVehicles = isLoadingVehicles,
-                vehicleError = vehicleError,
-                onAddVehicleClick = onAddVehicleClick,
-                onRefresh = onRefreshVehicles
+                vehicles = vehicles, isLoggedIn = isLoggedIn,
+                isLoadingVehicles = isLoadingVehicles, vehicleError = vehicleError,
+                onAddVehicleClick = onAddVehicleClick, onRefresh = onRefreshVehicles
             )
         }
-
-        // ── Zapisane sesje ──
-        item {
-            Text(
-                "ZAPISANE SESJE (${sessions.size})",
-                fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                color = TextSecondary, letterSpacing = 1.5.sp,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-        }
-
+        item { Text("ZAPISANE SESJE (${sessions.size})", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextSecondary, letterSpacing = 1.5.sp, modifier = Modifier.padding(top = 4.dp)) }
         if (sessions.isEmpty()) {
-            item {
-                Box(
-                    modifier = Modifier.fillMaxWidth().padding(24.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("Brak zapisanych sesji", color = TextSecondary)
-                }
-            }
+            item { Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { Text("Brak zapisanych sesji", color = TextSecondary) } }
         }
-
         items(sessions) { session ->
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
-                colors = CardDefaults.cardColors(containerColor = CardBackground)
-            ) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp), colors = CardDefaults.cardColors(containerColor = CardBackground)) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            session.sessionId, fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold, color = TextPrimary,
-                            fontFamily = FontFamily.Monospace
-                        )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text(session.sessionId, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary, fontFamily = FontFamily.Monospace)
                         Text("${session.sizeKb} KB", fontSize = 12.sp, color = AccentBlue)
                     }
                     Spacer(Modifier.height(4.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("${session.recordCount} rek.", fontSize = 11.sp, color = TextSecondary)
-                        if (session.vin.isNotBlank()) {
-                            Text(
-                                "VIN: ${session.vin.take(17)}", fontSize = 11.sp,
-                                color = TextSecondary, fontFamily = FontFamily.Monospace
-                            )
-                        }
+                        if (session.vin.isNotBlank()) Text("VIN: ${session.vin.take(17)}", fontSize = 11.sp, color = TextSecondary, fontFamily = FontFamily.Monospace)
                     }
-                    Text(
-                        session.file.absolutePath, fontSize = 10.sp,
-                        color = TextSecondary.copy(alpha = 0.4f),
-                        modifier = Modifier.padding(top = 2.dp),
-                        maxLines = 1, overflow = TextOverflow.Ellipsis
-                    )
+                    Text(session.file.absolutePath, fontSize = 10.sp, color = TextSecondary.copy(alpha = 0.4f), modifier = Modifier.padding(top = 2.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-        }
-    }
-}
-
-// ─── VehiclesSection (skrócony widok w SessionsTab) ───────────────────────────
-
-//@Composable
-//fun VehiclesSection(
-//    vehicles: List<com.obdreader.app.auth.AuthManager.Vehicle>,
-//    isLoggedIn: Boolean,
-//    isLoadingVehicles: Boolean,
-//    vehicleError: String?,
-//    onAddVehicleClick: () -> Unit,
-//    onRefresh: () -> Unit
-//) {
-//    Column(
-//        modifier = Modifier.fillMaxWidth(),
-//        verticalArrangement = Arrangement.spacedBy(8.dp)
-//    ) {
-//        Row(
-//            modifier = Modifier.fillMaxWidth(),
-//            verticalAlignment = Alignment.CenterVertically,
-//            horizontalArrangement = Arrangement.SpaceBetween
-//        ) {
-//            Text(
-//                "MOJE POJAZDY",
-//                fontSize = 10.sp, fontWeight = FontWeight.Bold,
-//                color = TextSecondary, letterSpacing = 1.5.sp
-//            )
-//            if (isLoggedIn) {
-//                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-//                    IconButton(
-//                        onClick = onRefresh,
-//                        modifier = Modifier.size(28.dp)
-//                    ) {
-//                        Icon(Icons.Default.Refresh, null, tint = TextSecondary, modifier = Modifier.size(16.dp))
-//                    }
-//                    IconButton(
-//                        onClick = onAddVehicleClick,
-//                        modifier = Modifier
-//                            .size(28.dp)
-//                            .clip(RoundedCornerShape(6.dp))
-//                            .background(AccentGreen.copy(0.15f))
-//                    ) {
-//                        Icon(Icons.Default.Add, null, tint = AccentGreen, modifier = Modifier.size(18.dp))
-//                    }
-//                }
-//            }
-//        }
-//
-//        when {
-//            !isLoggedIn -> {
-//                Card(
-//                    modifier = Modifier.fillMaxWidth(),
-//                    shape = RoundedCornerShape(12.dp),
-//                    colors = CardDefaults.cardColors(containerColor = CardBackground),
-//                    border = BorderStroke(1.dp, TextSecondary.copy(0.15f))
-//                ) {
-//                    Row(
-//                        modifier = Modifier.padding(14.dp),
-//                        verticalAlignment = Alignment.CenterVertically,
-//                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-//                    ) {
-//                        Icon(Icons.Default.Lock, null, tint = TextSecondary, modifier = Modifier.size(18.dp))
-//                        Text("Zaloguj się, aby zarządzać pojazdami", fontSize = 13.sp, color = TextSecondary)
-//                    }
-//                }
-//            }
-//            isLoadingVehicles -> {
-//                Box(
-//                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-//                    contentAlignment = Alignment.Center
-//                ) {
-//                    CircularProgressIndicator(
-//                        modifier = Modifier.size(24.dp),
-//                        color = AccentGreen,
-//                        strokeWidth = 2.dp
-//                    )
-//                }
-//            }
-//            vehicleError != null -> {
-//                Card(
-//                    modifier = Modifier.fillMaxWidth(),
-//                    shape = RoundedCornerShape(12.dp),
-//                    colors = CardDefaults.cardColors(containerColor = AccentRed.copy(0.08f)),
-//                    border = BorderStroke(1.dp, AccentRed.copy(0.3f))
-//                ) {
-//                    Row(
-//                        modifier = Modifier.padding(14.dp),
-//                        verticalAlignment = Alignment.CenterVertically,
-//                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-//                    ) {
-//                        Icon(Icons.Default.ErrorOutline, null, tint = AccentRed, modifier = Modifier.size(18.dp))
-//                        Text(vehicleError, fontSize = 13.sp, color = AccentRed)
-//                    }
-//                }
-//            }
-//            vehicles.isEmpty() -> {
-//                Card(
-//                    modifier = Modifier
-//                        .fillMaxWidth()
-//                        .clickable { onAddVehicleClick() },
-//                    shape = RoundedCornerShape(12.dp),
-//                    colors = CardDefaults.cardColors(containerColor = CardBackground),
-//                    border = BorderStroke(1.dp, AccentGreen.copy(0.2f))
-//                ) {
-//                    Column(
-//                        modifier = Modifier.padding(20.dp).fillMaxWidth(),
-//                        horizontalAlignment = Alignment.CenterHorizontally,
-//                        verticalArrangement = Arrangement.spacedBy(8.dp)
-//                    ) {
-//                        Icon(
-//                            Icons.Default.DirectionsCar, null,
-//                            tint = AccentGreen.copy(0.4f),
-//                            modifier = Modifier.size(32.dp)
-//                        )
-//                        Text("Brak pojazdów", fontSize = 14.sp, color = TextSecondary, fontWeight = FontWeight.Medium)
-//                        Text(
-//                            "Dotknij aby dodać pierwszy pojazd",
-//                            fontSize = 12.sp, color = TextSecondary.copy(0.6f)
-//                        )
-//                    }
-//                }
-//            }
-//            else -> {
-//                vehicles.forEach { vehicle ->
-//                    SessionVehicleChip(vehicle = vehicle)
-//                }
-//                OutlinedButton(
-//                    onClick = onAddVehicleClick,
-//                    modifier = Modifier.fillMaxWidth(),
-//                    shape = RoundedCornerShape(10.dp),
-//                    border = BorderStroke(1.dp, AccentGreen.copy(0.3f)),
-//                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentGreen)
-//                ) {
-//                    Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
-//                    Spacer(Modifier.width(6.dp))
-//                    Text("Dodaj pojazd", fontSize = 13.sp)
-//                }
-//            }
-//        }
-//    }
-//}
-
-// Kompaktowa karta pojazdu do widoku w SessionsTab
-@Composable
-private fun SessionVehicleChip(vehicle: com.obdreader.app.auth.AuthManager.Vehicle) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBackground),
-        border = BorderStroke(1.dp, AccentGreen.copy(0.12f))
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Icon(
-                Icons.Default.DirectionsCar, null,
-                tint = AccentGreen, modifier = Modifier.size(18.dp)
-            )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    vehicle.name.ifBlank { "${vehicle.make} ${vehicle.model}".trim() },
-                    fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextPrimary,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis
-                )
-                val sub = buildList {
-                    if (vehicle.make.isNotBlank()) add(vehicle.make)
-                    if (vehicle.model.isNotBlank()) add(vehicle.model)
-                    if (vehicle.year.isNotBlank()) add(vehicle.year)
-                }.joinToString(" • ")
-                if (sub.isNotBlank()) {
-                    Text(sub, fontSize = 11.sp, color = TextSecondary, maxLines = 1)
-                }
-            }
-            Text("#${vehicle.id}", fontSize = 11.sp, color = AccentBlue.copy(0.5f))
         }
     }
 }

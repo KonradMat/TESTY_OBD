@@ -10,10 +10,6 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 
-/**
- * Zarządza autentykacją użytkownika (JWT).
- * Przechowuje token w SharedPreferences.
- */
 class AuthManager(private val context: Context) {
 
     companion object {
@@ -28,7 +24,7 @@ class AuthManager(private val context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    val BASE_URL = "https://api.nightingales.pl"
+    private val BASE_URL = "https://api.nightingales.pl"
 
     // ─── Token ────────────────────────────────────────────────────────────────
 
@@ -124,13 +120,25 @@ class AuthManager(private val context: Context) {
         data class Error(val message: String) : VehicleResult()
     }
 
+    /**
+     * Model pojazdu — year jako Int zgodnie z API.
+     * fuelType i pola techniczne są opcjonalne (nullable) bo stary backend
+     * mógł ich nie zwracać w GET; dodajemy je tylko przy POST.
+     */
     data class Vehicle(
         val id: Int,
         val name: String,
         val make: String,
         val model: String,
-        val year: String
-    )
+        val year: Int,
+        val fuelType: String = "",
+        val engineDisplacementL: Double = 0.0,
+        val cylinderCount: Int = 0,
+        val tankCapacityL: Int = 0,
+        val vehicleMassKg: Int = 0
+    ) {
+        val yearLabel: String get() = if (year > 0) year.toString() else ""
+    }
 
     /**
      * Pobiera listę pojazdów użytkownika.
@@ -146,11 +154,16 @@ class AuthManager(private val context: Context) {
                     val obj = arr.getJSONObject(i)
                     list.add(
                         Vehicle(
-                            id    = obj.optInt("id", -1),
-                            name  = obj.optString("name"),
-                            make  = obj.optString("make"),
-                            model = obj.optString("model"),
-                            year  = obj.optString("year")
+                            id                  = obj.optInt("id", -1),
+                            name                = obj.optString("name"),
+                            make                = obj.optString("make"),
+                            model               = obj.optString("model"),
+                            year                = obj.optInt("year", 0),
+                            fuelType            = obj.optString("fuelType", ""),
+                            engineDisplacementL = obj.optDouble("engineDisplacementL", 0.0),
+                            cylinderCount       = obj.optInt("cylinderCount", 0),
+                            tankCapacityL       = obj.optInt("tankCapacityL", 0),
+                            vehicleMassKg       = obj.optInt("vehicleMassKg", 0)
                         )
                     )
                 }
@@ -167,28 +180,49 @@ class AuthManager(private val context: Context) {
     /**
      * Dodaje nowy pojazd.
      * POST /api/Vehicles
+     *
+     * API wymaga wszystkich pól z odpowiednimi typami:
+     *   year               → Int  (nie String!)
+     *   fuelType           → String ("gasoline" | "diesel" | "lpg" | "cng" | "electric" | "hybrid")
+     *   engineDisplacementL → Double
+     *   cylinderCount      → Int
+     *   tankCapacityL      → Int
+     *   vehicleMassKg      → Int
      */
     suspend fun addVehicle(
         name: String,
         make: String,
         model: String,
-        year: String
+        year: Int,
+        fuelType: String,
+        engineDisplacementL: Double,
+        cylinderCount: Int,
+        tankCapacityL: Int,
+        vehicleMassKg: Int
     ): VehicleResult = withContext(Dispatchers.IO) {
         try {
             val body = JSONObject().apply {
-                put("name", name)
-                put("make", make)
-                put("model", model)
-                put("year", year)
+                put("name",                name)
+                put("make",                make)
+                put("model",               model)
+                put("year",                year)
+                put("fuelType",            fuelType)
+                put("engineDisplacementL", engineDisplacementL)
+                put("cylinderCount",       cylinderCount)
+                put("tankCapacityL",       tankCapacityL)
+                put("vehicleMassKg",       vehicleMassKg)
             }
+            Log.d(TAG, "addVehicle body: ${body.toString(2)}")
             val response = postJson("$BASE_URL/api/Vehicles", body.toString())
+            Log.d(TAG, "addVehicle response: ${response.first} | ${response.second}")
             if (response.first in 200..299) {
                 val id = try {
                     JSONObject(response.second).optInt("id")
                 } catch (e: Exception) { null }
                 VehicleResult.Added(id)
             } else {
-                val msg = parseErrorMessage(response.second) ?: "Błąd dodawania pojazdu (${response.first})"
+                val msg = parseErrorMessage(response.second)
+                    ?: "Błąd dodawania pojazdu (${response.first})"
                 VehicleResult.Error(msg)
             }
         } catch (e: Exception) {
@@ -198,7 +232,7 @@ class AuthManager(private val context: Context) {
     }
 
     /**
-     * Usuwa pojazd.
+     * Usuwanie pojazd.
      * DELETE /api/Vehicles/{id}
      */
     suspend fun deleteVehicle(id: Int): VehicleResult = withContext(Dispatchers.IO) {
@@ -215,8 +249,6 @@ class AuthManager(private val context: Context) {
             VehicleResult.Error("Brak połączenia z serwerem")
         }
     }
-
-    // ─── HTTP helpers ─────────────────────────────────────────────────────────
 
     private fun postJson(urlStr: String, jsonBody: String): Pair<Int, String> {
         val url = URL(urlStr)
@@ -286,8 +318,6 @@ class AuthManager(private val context: Context) {
         }
     }
 
-    // ─── Parsery ──────────────────────────────────────────────────────────────
-
     private fun extractToken(body: String): String? {
         return try {
             val obj = JSONObject(body)
@@ -303,11 +333,25 @@ class AuthManager(private val context: Context) {
     private fun parseErrorMessage(body: String): String? {
         return try {
             val obj = JSONObject(body)
+            // Obsługa ASP.NET Core ValidationProblemDetails
+            // { "errors": { "Year": ["..."] }, "title": "One or more validation errors..." }
+            val errors = obj.optJSONObject("errors")
+            if (errors != null && errors.length() > 0) {
+                val sb = StringBuilder()
+                errors.keys().forEach { key ->
+                    val arr = errors.optJSONArray(key)
+                    if (arr != null && arr.length() > 0) {
+                        sb.append("$key: ${arr.getString(0)}\n")
+                    }
+                }
+                val errStr = sb.toString().trim()
+                if (errStr.isNotBlank()) return errStr
+            }
             obj.optString("message").takeIf { it.isNotBlank() }
                 ?: obj.optString("error").takeIf { it.isNotBlank() }
                 ?: obj.optString("title").takeIf { it.isNotBlank() }
         } catch (e: Exception) {
-            body.takeIf { it.isNotBlank() && it.length < 200 }
+            body.takeIf { it.isNotBlank() && it.length < 300 }
         }
     }
 }

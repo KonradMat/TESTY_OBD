@@ -15,11 +15,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.obdreader.app.auth.AuthManager
 
 // ─── Pełny ekran zarządzania pojazdami ────────────────────────────────────────
@@ -35,16 +33,20 @@ fun VehiclesScreen(
     vehicleToDelete: AuthManager.Vehicle?,
     isDeletingVehicle: Boolean,
     onAddClick: () -> Unit,
-    onAddVehicle: (name: String, make: String, model: String, year: String) -> Unit,
+    // Zaktualizowana sygnatura — wszystkie pola wymagane przez API
+    onAddVehicle: (name: String, make: String, model: String, year: Int,
+                   fuelType: String, engineDisplacementL: Double,
+                   cylinderCount: Int, tankCapacityL: Int, vehicleMassKg: Int) -> Unit,
     onDismissAdd: () -> Unit,
     onDeleteRequest: (AuthManager.Vehicle) -> Unit,
     onDeleteConfirm: () -> Unit,
     onDeleteCancel: () -> Unit,
     onRefresh: () -> Unit
 ) {
+    LaunchedEffect(Unit) { onRefresh() }
+
     Box(modifier = Modifier.fillMaxSize()) {
         if (isLoading && vehicles.isEmpty()) {
-            // Stan ładowania (pierwsze wejście)
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = AccentGreen, modifier = Modifier.size(40.dp))
@@ -58,7 +60,6 @@ fun VehiclesScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Nagłówek sekcji
                 item {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -66,83 +67,42 @@ fun VehiclesScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column {
-                            Text(
-                                "Moje pojazdy",
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary
-                            )
-                            Text(
-                                "${vehicles.size} ${vehicleCountLabel(vehicles.size)}",
-                                fontSize = 13.sp,
-                                color = TextSecondary
-                            )
+                            Text("Moje pojazdy", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("${vehicles.size} ${vehicleCountLabel(vehicles.size)}", fontSize = 13.sp, color = TextSecondary)
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            // Odśwież
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             IconButton(
                                 onClick = onRefresh,
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .clip(CircleShape)
-                                    .border(1.dp, TextSecondary.copy(0.25f), CircleShape)
+                                modifier = Modifier.size(38.dp).clip(CircleShape).border(1.dp, TextSecondary.copy(0.25f), CircleShape)
                             ) {
                                 if (isLoading) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(16.dp),
-                                        color = AccentGreen,
-                                        strokeWidth = 2.dp
-                                    )
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = AccentGreen, strokeWidth = 2.dp)
                                 } else {
-                                    Icon(
-                                        Icons.Default.Refresh, null,
-                                        tint = TextSecondary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
+                                    Icon(Icons.Default.Refresh, null, tint = TextSecondary, modifier = Modifier.size(18.dp))
                                 }
                             }
-                            // Dodaj
                             IconButton(
                                 onClick = onAddClick,
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .clip(CircleShape)
-                                    .background(AccentGreen.copy(0.15f))
-                                    .border(1.dp, AccentGreen.copy(0.5f), CircleShape)
+                                modifier = Modifier.size(38.dp).clip(CircleShape).background(AccentGreen.copy(0.15f)).border(1.dp, AccentGreen.copy(0.5f), CircleShape)
                             ) {
-                                Icon(
-                                    Icons.Default.Add, null,
-                                    tint = AccentGreen,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                                Icon(Icons.Default.Add, null, tint = AccentGreen, modifier = Modifier.size(20.dp))
                             }
                         }
                     }
                 }
 
-                // Błąd
                 if (error != null) {
-                    item {
-                        ErrorBanner(message = error)
-                    }
+                    item { ErrorBanner(message = error) }
                 }
 
-                // Lista pusta
                 if (vehicles.isEmpty() && !isLoading) {
-                    item {
-                        EmptyVehiclesPlaceholder(onAddClick = onAddClick)
-                    }
+                    item { EmptyVehiclesPlaceholder(onAddClick = onAddClick) }
                 }
 
-                // Karty pojazdów
                 items(vehicles, key = { it.id }) { vehicle ->
-                    VehicleItemCard(
-                        vehicle = vehicle,
-                        onDeleteRequest = { onDeleteRequest(vehicle) }
-                    )
+                    VehicleItemCard(vehicle = vehicle, onDeleteRequest = { onDeleteRequest(vehicle) })
                 }
 
-                // Przycisk dodaj na dole (gdy jest już kilka pojazdów)
                 if (vehicles.isNotEmpty()) {
                     item {
                         Spacer(Modifier.height(4.dp))
@@ -164,7 +124,7 @@ fun VehiclesScreen(
             }
         }
 
-        // Dialog dodawania
+        // Dialog dodawania — przekazujemy rozszerzoną sygnaturę
         if (showAddDialog) {
             AddVehicleDialog(
                 isLoading = isAddingVehicle,
@@ -200,97 +160,63 @@ fun VehicleItemCard(
         border = BorderStroke(1.dp, AccentGreen.copy(0.12f))
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Ikona pojazdu
             Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(
-                        Brush.radialGradient(
-                            listOf(AccentGreen.copy(0.2f), AccentGreen.copy(0.05f))
-                        )
-                    ),
+                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
+                    .background(Brush.radialGradient(listOf(AccentGreen.copy(0.2f), AccentGreen.copy(0.05f)))),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    Icons.Default.DirectionsCar, null,
-                    tint = AccentGreen,
-                    modifier = Modifier.size(26.dp)
-                )
+                Icon(Icons.Default.DirectionsCar, null, tint = AccentGreen, modifier = Modifier.size(26.dp))
             }
 
-            // Informacje
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     vehicle.name.ifBlank { "${vehicle.make} ${vehicle.model}".trim() },
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
                 val subtitle = buildList {
                     if (vehicle.make.isNotBlank()) add(vehicle.make)
                     if (vehicle.model.isNotBlank()) add(vehicle.model)
                 }.joinToString(" ")
                 if (subtitle.isNotBlank()) {
-                    Text(
-                        subtitle,
-                        fontSize = 13.sp,
-                        color = TextSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Text(subtitle, fontSize = 13.sp, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                if (vehicle.year.isNotBlank()) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier.padding(top = 2.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.CalendarToday, null,
-                            tint = AccentBlue.copy(0.6f),
-                            modifier = Modifier.size(11.dp)
-                        )
-                        Text(
-                            vehicle.year,
-                            fontSize = 12.sp,
-                            color = AccentBlue.copy(0.7f)
-                        )
+
+                // Wiersz: rok + typ paliwa
+                val metaLine = buildList {
+                    if (vehicle.yearLabel.isNotBlank()) add(vehicle.yearLabel)
+                    if (vehicle.fuelType.isNotBlank()) {
+                        // Znajdź etykietę UI dla wartości API
+                        val fuelLabel = listOf(
+                            "gasoline" to "Benzyna", "diesel" to "Diesel", "lpg" to "LPG",
+                            "cng" to "CNG", "electric" to "Elektryczny", "hybrid" to "Hybryda"
+                        ).find { it.first == vehicle.fuelType }?.second ?: vehicle.fuelType
+                        add(fuelLabel)
                     }
+                    if (vehicle.engineDisplacementL > 0.0) add("%.1f L".format(vehicle.engineDisplacementL))
+                }.joinToString(" • ")
+
+                if (metaLine.isNotBlank()) {
+                    Text(metaLine, fontSize = 12.sp, color = AccentBlue.copy(0.7f))
                 }
             }
 
-            // ID chip + usuń
             Column(
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(
-                    "#${vehicle.id}",
-                    fontSize = 11.sp,
-                    color = TextSecondary.copy(0.5f)
-                )
+                Text("#${vehicle.id}", fontSize = 11.sp, color = TextSecondary.copy(0.5f))
                 IconButton(
                     onClick = onDeleteRequest,
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(CircleShape)
+                    modifier = Modifier.size(32.dp).clip(CircleShape)
                         .background(AccentRed.copy(0.08f))
                         .border(1.dp, AccentRed.copy(0.25f), CircleShape)
                 ) {
-                    Icon(
-                        Icons.Default.DeleteOutline, null,
-                        tint = AccentRed.copy(0.8f),
-                        modifier = Modifier.size(16.dp)
-                    )
+                    Icon(Icons.Default.DeleteOutline, null, tint = AccentRed.copy(0.8f), modifier = Modifier.size(16.dp))
                 }
             }
         }
@@ -311,76 +237,26 @@ fun DeleteVehicleDialog(
         containerColor = CardBackground,
         shape = RoundedCornerShape(20.dp),
         icon = {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(AccentRed.copy(0.12f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.DeleteOutline, null,
-                    tint = AccentRed,
-                    modifier = Modifier.size(24.dp)
-                )
+            Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(AccentRed.copy(0.12f)), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.DeleteOutline, null, tint = AccentRed, modifier = Modifier.size(24.dp))
             }
         },
-        title = {
-            Text(
-                "Usuń pojazd",
-                color = TextPrimary,
-                fontWeight = FontWeight.Bold,
-                fontSize = 17.sp
-            )
-        },
+        title = { Text("Usuń pojazd", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 17.sp) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    "Czy na pewno chcesz usunąć:",
-                    color = TextSecondary,
-                    fontSize = 13.sp
-                )
-                Text(
-                    vehicle.name.ifBlank { "${vehicle.make} ${vehicle.model}".trim() },
-                    color = TextPrimary,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp
-                )
-                Text(
-                    "Tej operacji nie można cofnąć.",
-                    color = AccentRed.copy(0.8f),
-                    fontSize = 12.sp
-                )
+                Text("Czy na pewno chcesz usunąć:", color = TextSecondary, fontSize = 13.sp)
+                Text(vehicle.name.ifBlank { "${vehicle.make} ${vehicle.model}".trim() }, color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                Text("Tej operacji nie można cofnąć.", color = AccentRed.copy(0.8f), fontSize = 12.sp)
             }
         },
         confirmButton = {
-            Button(
-                onClick = onConfirm,
-                enabled = !isDeleting,
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = AccentRed,
-                    disabledContainerColor = AccentRed.copy(0.4f)
-                )
-            ) {
-                if (isDeleting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Text("Usuń", color = Color.White, fontWeight = FontWeight.Bold)
-                }
+            Button(onClick = onConfirm, enabled = !isDeleting, shape = RoundedCornerShape(10.dp), colors = ButtonDefaults.buttonColors(containerColor = AccentRed, disabledContainerColor = AccentRed.copy(0.4f))) {
+                if (isDeleting) CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                else Text("Usuń", color = Color.White, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                enabled = !isDeleting
-            ) {
-                Text("Anuluj", color = TextSecondary)
-            }
+            TextButton(onClick = onDismiss, enabled = !isDeleting) { Text("Anuluj", color = TextSecondary) }
         }
     )
 }
@@ -390,51 +266,23 @@ fun DeleteVehicleDialog(
 @Composable
 private fun EmptyVehiclesPlaceholder(onAddClick: () -> Unit) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onAddClick() },
+        modifier = Modifier.fillMaxWidth().clickable { onAddClick() },
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = CardBackground),
         border = BorderStroke(1.dp, AccentGreen.copy(0.2f))
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(40.dp),
+            modifier = Modifier.fillMaxWidth().padding(40.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
-                    .background(AccentGreen.copy(0.08f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.DirectionsCar, null,
-                    tint = AccentGreen.copy(0.5f),
-                    modifier = Modifier.size(36.dp)
-                )
+            Box(modifier = Modifier.size(64.dp).clip(CircleShape).background(AccentGreen.copy(0.08f)), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.DirectionsCar, null, tint = AccentGreen.copy(0.5f), modifier = Modifier.size(36.dp))
             }
-            Text(
-                "Brak pojazdów",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = TextSecondary
-            )
-            Text(
-                "Dodaj swój pierwszy pojazd,\naby powiązać dane OBD2 z samochodem",
-                fontSize = 13.sp,
-                color = TextSecondary.copy(0.6f),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-            )
+            Text("Brak pojazdów", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextSecondary)
+            Text("Dodaj swój pierwszy pojazd,\naby powiązać dane OBD2 z samochodem", fontSize = 13.sp, color = TextSecondary.copy(0.6f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             Spacer(Modifier.height(4.dp))
-            Button(
-                onClick = onAddClick,
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
-            ) {
+            Button(onClick = onAddClick, shape = RoundedCornerShape(10.dp), colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)) {
                 Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp), tint = Color.Black)
                 Spacer(Modifier.width(8.dp))
                 Text("Dodaj pojazd", color = Color.Black, fontWeight = FontWeight.Bold)
@@ -448,9 +296,7 @@ private fun EmptyVehiclesPlaceholder(onAddClick: () -> Unit) {
 @Composable
 private fun ErrorBanner(message: String) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
             .background(AccentRed.copy(0.1f))
             .border(1.dp, AccentRed.copy(0.35f), RoundedCornerShape(10.dp))
             .padding(12.dp),

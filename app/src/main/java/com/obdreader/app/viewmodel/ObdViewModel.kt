@@ -33,11 +33,9 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     private val LOW_EVERY        = 30
 
     // ─── Stan Auth ────────────────────────────────────────────────────────────
-    /** true = zalogowany lub gość; false = pokaż ekran logowania */
     private val _authPassed = MutableStateFlow(authManager.isLoggedIn)
     val authPassed: StateFlow<Boolean> = _authPassed.asStateFlow()
 
-    /** true = użytkownik wszedł jako gość (nie ma tokenu) */
     private val _isGuest = MutableStateFlow(false)
     val isGuest: StateFlow<Boolean> = _isGuest.asStateFlow()
 
@@ -66,7 +64,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     private val _showAddVehicleDialog = MutableStateFlow(false)
     val showAddVehicleDialog: StateFlow<Boolean> = _showAddVehicleDialog.asStateFlow()
 
-    // Pojazd do potwierdzenia usunięcia (null = dialog zamknięty)
     private val _vehicleToDelete = MutableStateFlow<AuthManager.Vehicle?>(null)
     val vehicleToDelete: StateFlow<AuthManager.Vehicle?> = _vehicleToDelete.asStateFlow()
 
@@ -101,6 +98,14 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
 
     private var scanJob:    Job? = null
     private var connectJob: Job? = null
+
+    init {
+        if (authManager.isLoggedIn) {
+            loadVehicles()
+        }
+        uploader.tokenProvider = { authManager.token }
+        uploader.vehicleId = vehicles.value.firstOrNull()?.id ?: 0
+    }
 
     // ─── Auth ─────────────────────────────────────────────────────────────────
 
@@ -164,7 +169,11 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
             _isLoadingVehicles.value = true
             _vehicleError.value = null
             when (val result = authManager.getVehicles()) {
-                is AuthManager.VehicleResult.Success -> _vehicles.value = result.vehicles
+                is AuthManager.VehicleResult.Success -> {
+                    _vehicles.value = result.vehicles
+                    // ← DODAJ: ustaw pierwszy pojazd jako aktywny dla uploadera
+                    uploader.vehicleId = result.vehicles.firstOrNull()?.id ?: 0
+                }
                 is AuthManager.VehicleResult.Error   -> _vehicleError.value = result.message
                 else -> {}
             }
@@ -182,11 +191,40 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
         _addVehicleError.value = null
     }
 
-    fun addVehicle(name: String, make: String, model: String, year: String) {
+    /**
+     * Sygnatura zaktualizowana zgodnie z API:
+     *   year               → Int
+     *   fuelType           → String (wartość API: "gasoline", "diesel", itd.)
+     *   engineDisplacementL → Double
+     *   cylinderCount      → Int
+     *   tankCapacityL      → Int
+     *   vehicleMassKg      → Int
+     */
+    fun addVehicle(
+        name: String,
+        make: String,
+        model: String,
+        year: Int,
+        fuelType: String,
+        engineDisplacementL: Double,
+        cylinderCount: Int,
+        tankCapacityL: Int,
+        vehicleMassKg: Int
+    ) {
         viewModelScope.launch {
             _isAddingVehicle.value = true
             _addVehicleError.value = null
-            when (val result = authManager.addVehicle(name, make, model, year)) {
+            when (val result = authManager.addVehicle(
+                name                = name,
+                make                = make,
+                model               = model,
+                year                = year,
+                fuelType            = fuelType,
+                engineDisplacementL = engineDisplacementL,
+                cylinderCount       = cylinderCount,
+                tankCapacityL       = tankCapacityL,
+                vehicleMassKg       = vehicleMassKg
+            )) {
                 is AuthManager.VehicleResult.Added -> {
                     _showAddVehicleDialog.value = false
                     loadVehicles()
@@ -220,7 +258,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
                     addLog("Pojazd usunięty: ${vehicle.name}")
                 }
                 is AuthManager.VehicleResult.Error -> {
-                    // Zostaw dialog otwarty, pokaż błąd przez vehicleError
                     _vehicleError.value = result.message
                     _vehicleToDelete.value = null
                 }
@@ -357,7 +394,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
                         val newData = bluetoothManager.readCommands(toRead)
                         mergeData(newData)
 
-                        // Logowanie tylko dla zalogowanych
                         if (_isLogging.value && !_isGuest.value) {
                             val recordJson = dataLogger.addRecord(_sensorData.value)
                             val metaJson   = buildMetaJson()

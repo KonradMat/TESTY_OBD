@@ -24,7 +24,7 @@ class ObdBluetoothManager {
         private const val COMMAND_TIMEOUT_MS   = 3000L
         private const val INIT_DELAY_MS        = 1500L
 
-        // Timeouty per typ samochodu — BMW i niektóre Ople potrzebują więcej czasu
+        // Timeouty per typ samochodu —
         private const val TIMEOUT_STANDARD_MS  = 2000L   // VW, większość
         private const val TIMEOUT_SLOW_MS      = 4000L   // BMW, Opel, wolne ECU
         private const val TIMEOUT_INIT_MS      = 5000L   // test protokołu przy init
@@ -59,7 +59,7 @@ class ObdBluetoothManager {
     private var outputStream: OutputStream? = null
 
     // Wykryty protokół i timeout dostosowany do konkretnego samochodu
-    private var activeProtocol: String = "0"   // "0"=auto, "6"=CAN11, "7"=CAN29 itd.
+    private var activeProtocol: String = "0"   // "0"=auto, "6"=CAN11, "7"=CAN29
     private var commandTimeoutMs: Long = TIMEOUT_STANDARD_MS
 
     val isConnected: Boolean
@@ -82,8 +82,6 @@ class ObdBluetoothManager {
         }
 
     val calibratedTimeoutMs: Long get() = commandTimeoutMs
-
-    // ─── Połączenie ──────────────────────────────────────────────────────────
 
     suspend fun connect(device: BluetoothDevice, maxRetries: Int = 3): Boolean =
         withContext(Dispatchers.IO) {
@@ -139,7 +137,7 @@ class ObdBluetoothManager {
         }
 
     private fun tryCreateSocket(device: BluetoothDevice): BluetoothSocket? {
-        // Próba 1: standardowy SPP UUID
+        //standardowy SPP UUID
         return try {
             val socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
             socket.connect()
@@ -147,7 +145,7 @@ class ObdBluetoothManager {
             socket
         } catch (e: IOException) {
             Log.w(TAG, "SPP UUID nieudany, próba reflection: ${e.message}")
-            // Próba 2: reflection (niezbędne dla niektórych tanich kostek)
+            //reflection
             try {
                 val socket = device.javaClass
                     .getMethod("createRfcommSocket", Int::class.javaPrimitiveType)
@@ -167,22 +165,17 @@ class ObdBluetoothManager {
     private suspend fun initializeElm327(): Boolean {
         Log.d(TAG, "Rozpoczynam inicjalizację ELM327...")
 
-        // ── Krok 1: Reset adaptera ───────────────────────────────────────────
-        // ATZ wysyłamy bez sprawdzania odpowiedzi – echo może być jeszcze włączone
         sendRawCommand("ATZ", timeoutMs = 4000)
         delay(1500)  // ATZ potrzebuje chwili na pełny reset układu
         flushInput()
 
-        // ── Krok 2: Konfiguracja podstawowa ─────────────────────────────────
-        // Kolejność ma znaczenie — ATE0 musi być pierwsza (wyłącza echo)
-        // Bez ATE0 parser dostaje każdą komendę z powrotem + odpowiedź = chaos
         val baseConfig = listOf(
-            "ATE0",   // Echo OFF — KRYTYCZNE, musi być pierwsze
+            "ATE0",   // Echo OFF
             "ATL0",   // Linefeeds OFF
-            "ATS1",   // Spaces ON — "41 0C 1A FF" łatwiej parsować niż "410C1AFF"
-            "ATH0",   // Headers OFF — nie potrzebujemy nagłówków CAN w normalnym trybie
-            "ATAT2",  // Adaptive timing MAX — kluczowe dla BMW/Opel które odpowiadają wolno
-            "ATST FF" // Timeout maksymalny (255 * 4ms = ~1s per odpowiedź ECU)
+            "ATS1",   // Spaces ON - "41 0C 1A FF"
+            "ATH0",   // Headers OFF - nie potrzebujemy nagłówków CAN w normalnym trybie
+            "ATAT2",  // Adaptive timing MAX
+            "ATST FF" // Timeout maksymalny (255 * 4ms = około 1s per odpowiedź ECU)
         )
 
         for (cmd in baseConfig) {
@@ -193,12 +186,11 @@ class ObdBluetoothManager {
                 Log.e(TAG, "Brak odpowiedzi na $cmd — przerywam init")
                 return false
             }
-            // "?" = nieznana komenda (stare kostki) — akceptujemy, idziemy dalej
+            // "?" = nieznana komenda (stare kostki) - akceptujemy, idziemy dalej
         }
 
-        // ── Krok 3: Wykrycie protokołu z fallback ───────────────────────────
         // ATSP0 = auto-detect. Dla BMW (CAN 29-bit) auto często wybiera zły protokół.
-        // Najpierw próbujemy auto, jeśli test PID zawiedzie — przechodzimy przez
+        // Najpierw próbujemy auto, jeśli test PID zawiedzie - przechodzimy przez
         // listę protokołów aż znajdziemy działający.
         val protocolFound = tryProtocols()
         if (!protocolFound) {
@@ -206,8 +198,6 @@ class ObdBluetoothManager {
             return false
         }
 
-        // ── Krok 4: Wykryj czy ECU jest wolne (BMW/Opel) ────────────────────
-        // Mierzymy czas odpowiedzi na RPM i ustawiamy odpowiedni timeout
         calibrateTimeout()
 
         Log.d(TAG, "Inicjalizacja OK — protokół SP$activeProtocol, timeout ${commandTimeoutMs}ms")
@@ -224,7 +214,7 @@ class ObdBluetoothManager {
      * Pierwsze działające = protokół pojazdu.
      */
     private suspend fun tryProtocols(): Boolean {
-        // Próba 1: ATSP0 (auto-detect) — działa dla ~80% samochodów
+        // Próba 1: ATSP0 (auto-detect)
         delay(200)
         sendRawCommand("ATSP0", timeoutMs = 2000)
         delay(500)  // auto-detect potrzebuje chwili na negocjację
@@ -242,7 +232,6 @@ class ObdBluetoothManager {
 
         Log.w(TAG, "ATSP0 nie działa — próbuję kolejnych protokołów...")
 
-        // Próba 2–8: kolejne protokoły z listy
         for (sp in PROTOCOL_FALLBACK_ORDER) {
             delay(300)
             sendRawCommand("ATSP$sp", timeoutMs = 2000)
@@ -257,7 +246,7 @@ class ObdBluetoothManager {
                 return true
             }
 
-            // Wyczyść bufor po nieudanej próbie
+            // Czyszczenie buforu
             flushInput()
         }
 
@@ -307,7 +296,7 @@ class ObdBluetoothManager {
         if (r.contains("NO PROTOCOL")) return false
         if (r.contains("CAN ERROR")) return false
         if (r.contains("ERR")) return false
-        // Akceptujemy nawet NO DATA — oznacza że ECU odpowiada, tylko silnik nie pracuje
+        // Akceptujemy nawet NO DATA - oznacza że ECU odpowiada, tylko silnik nie pracuje
         if (r.contains("NO DATA")) return true
         // Szukamy odpowiedzi zawierającej bajty hex odpowiedzi na 010C (41 0C ...)
         if (r.contains("41") || r.contains("410C") || r.contains("41 0C")) return true
@@ -315,8 +304,6 @@ class ObdBluetoothManager {
         val hexOnly = r.replace(" ", "")
         return hexOnly.matches(Regex("[0-9A-F]+")) && hexOnly.length >= 4
     }
-
-    // ─── Odczyt VIN ──────────────────────────────────────────────────────────
 
     private suspend fun readVin() {
         try {
@@ -332,8 +319,6 @@ class ObdBluetoothManager {
             Log.w(TAG, "Nie udało się odczytać VIN: ${e.message}")
         }
     }
-
-    // ─── Wykrywanie obsługiwanych komend ────────────────────────────────────
 
     /**
      * POPRAWIONA wersja – testuje każdy PID bezpośrednio, tak jak Python robił:
@@ -359,17 +344,11 @@ class ObdBluetoothManager {
         val supported = mutableListOf<ObdCommand>()
 
         // ── Krok 1: Bitmapa PIDów trybu 01 ──────────────────────────────────
-        // Grupy: 0100→01-20, 0120→21-40, 0140→41-60, 0160→61-80,
-        //        0180→81-A0, 01A0→A1-C0, 01C0→C1-E0
-        // WAŻNE: poprzednia wersja odpytywała tylko 3 grupy (00,20,40) przez
-        // stałe PIDS_A/B/C – przez to PIDy 61-C0 (turbo, moment, DPF, AdBlue)
-        // nigdy nie były wykrywane. Teraz odpytujemy wszystkie 7 grup.
         val supportedPidSet = mutableSetOf<String>()
         val pidGroups = listOf("00", "20", "40", "60", "80", "A0", "C0")
 
         for (groupPid in pidGroups) {
             val rawCmd = "01$groupPid"
-            // Używamy commandTimeoutMs — BMW potrzebuje więcej czasu na odpowiedź bitmapy
             val response = sendRawCommand(rawCmd, timeoutMs = commandTimeoutMs)
             Log.d(TAG, "Bitmapa $rawCmd -> '$response'")
             delay(150)
@@ -385,7 +364,6 @@ class ObdBluetoothManager {
 
         Log.d(TAG, "Bitmapa trybu 01: łącznie ${supportedPidSet.size} PIDów")
 
-        // ── Krok 2: Mapuj bitmapę trybu 01 na ObdCommand ────────────────────
         _connectionState.value = ConnectionState.Connecting("Mapowanie czujników tryb 01...")
 
         // Wyklucz tylko bitmapowe meta-PIDy (00,20,40,60,80,A0,C0) – same w sobie
