@@ -104,7 +104,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
             loadVehicles()
         }
         uploader.tokenProvider = { authManager.token }
-        uploader.vehicleId = vehicles.value.firstOrNull()?.id ?: 0
     }
 
     // ─── Auth ─────────────────────────────────────────────────────────────────
@@ -171,10 +170,9 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
             when (val result = authManager.getVehicles()) {
                 is AuthManager.VehicleResult.Success -> {
                     _vehicles.value = result.vehicles
-                    // ← DODAJ: ustaw pierwszy pojazd jako aktywny dla uploadera
                     uploader.vehicleId = result.vehicles.firstOrNull()?.id ?: 0
                 }
-                is AuthManager.VehicleResult.Error   -> _vehicleError.value = result.message
+                is AuthManager.VehicleResult.Error -> _vehicleError.value = result.message
                 else -> {}
             }
             _isLoadingVehicles.value = false
@@ -191,15 +189,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
         _addVehicleError.value = null
     }
 
-    /**
-     * Sygnatura zaktualizowana zgodnie z API:
-     *   year               → Int
-     *   fuelType           → String (wartość API: "gasoline", "diesel", itd.)
-     *   engineDisplacementL → Double
-     *   cylinderCount      → Int
-     *   tankCapacityL      → Int
-     *   vehicleMassKg      → Int
-     */
     fun addVehicle(
         name: String,
         make: String,
@@ -282,6 +271,10 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
                 val vin = vinInfo.value
                 if (vin.isNotBlank()) addLog("VIN: $vin")
                 if (!_isGuest.value) {
+                    // Upewnij się że vehicleId jest ustawiony przed retry
+                    if (uploader.vehicleId == 0) {
+                        loadVehiclesSync()
+                    }
                     val retryCount = uploader.pendingRetryCount()
                     if (retryCount > 0) {
                         addLog("Próba wysłania $retryCount oczekujących plików...")
@@ -314,7 +307,10 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     // ─── Sesja ────────────────────────────────────────────────────────────────
 
     private fun startSession() {
-        dataLogger.openSession(vin = vinInfo.value)
+        dataLogger.openSession(
+            vin = vinInfo.value,
+            email = authManager.savedEmail ?: ""
+        )
         _isLogging.value = true
         addLog("Sesja JSON: ${dataLogger.currentSessionFile()?.name}")
         addLog("Upload co ${uploader.uploadIntervalRecords} rekordów (~${uploader.uploadIntervalRecords}s)")
@@ -459,6 +455,19 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
             java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
                 .format(java.util.Date(it.lastModified()))
         } ?: "")
+    }
+
+    /** Synchroniczne ładowanie pojazdów — używane przed retry przy połączeniu */
+    private suspend fun loadVehiclesSync() {
+        if (!authManager.isLoggedIn) return
+        when (val result = authManager.getVehicles()) {
+            is AuthManager.VehicleResult.Success -> {
+                _vehicles.value = result.vehicles
+                uploader.vehicleId = result.vehicles.firstOrNull()?.id ?: 0
+                addLog("Pojazd aktywny: ID=${uploader.vehicleId}")
+            }
+            else -> {}
+        }
     }
 
     fun addLog(message: String) {

@@ -16,33 +16,22 @@ import java.util.Locale
  *
  * Struktura pliku:
  * {
- *   "session_id": "2026-03-17T12:34:56",
+ *   "session_id": "email_2026-05-07_13-45-00",
  *   "vin": "WF0XXGCBXKJA12345",
- *   "started_at": "2026-03-17T12:34:56.000Z",
- *   "records": [
- *     {
- *       "ts": "2026-03-17T12:34:57.123Z",
- *       "data": {
- *         "ENGINE_RPM":   { "v": 1250.0, "display": "1250", "unit": "rpm" },
- *         "VEHICLE_SPEED":{ "v": 0.0,    "display": "0",    "unit": "km/h" },
- *         ...
- *       }
- *     }
- *   ]
+ *   "started_at": "2026-05-07T13:45:00.000Z",
+ *   "records": [ ... ]
  * }
  *
  * Każdy plik = jedna sesja jazdy.
  * Pliki trafiają do: /data/data/com.obdreader.app/files/obd_sessions/
- * Można je pobrać przez Android Studio → Device File Explorer,
- * lub udostępnić przez FileProvider do wysyłania na backend.
  */
 class ObdDataLogger(private val context: Context) {
 
     companion object {
         private const val TAG = "ObdLogger"
         private const val DIR_NAME = "obd_sessions"
-        private const val MAX_RECORDS_IN_MEMORY = 500   // flush co tyle rekordów
-        private const val MAX_FILES = 50                // stare pliki są usuwane
+        private const val MAX_RECORDS_IN_MEMORY = 500
+        private const val MAX_FILES = 50
         private val ISO = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
         private val FILE_DATE = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US)
     }
@@ -58,12 +47,25 @@ class ObdDataLogger(private val context: Context) {
     /**
      * Otwiera nową sesję logowania.
      * @param vin VIN pojazdu (lub pusty string)
+     * @param email email użytkownika (używany w nazwie sesji)
      */
-    fun openSession(vin: String = "") {
+    fun openSession(vin: String = "", email: String = "") {
         val now = Date()
-        val sessionId = FILE_DATE.format(now)
+        val dateStr = FILE_DATE.format(now)
+
+        // Format: email_2026-05-07_13-45-00 lub sam dateStr jeśli brak emaila
+        val sessionId = if (email.isNotBlank()) {
+            val safeEmail = email
+                .replace("@", "_")
+                .replace(".", "_")
+                .lowercase()
+            "${safeEmail}_${dateStr}"
+        } else {
+            dateStr
+        }
+
         val dir = File(context.filesDir, DIR_NAME).also { it.mkdirs() }
-        currentFile = File(dir, "session_$sessionId.json")
+        currentFile = File(dir, "${sessionId}.json")
 
         sessionMeta = JSONObject().apply {
             put("session_id", sessionId)
@@ -97,7 +99,7 @@ class ObdDataLogger(private val context: Context) {
      */
     suspend fun addRecord(data: Map<ObdCommand, ObdResponseParser.ParsedValue>): JSONObject? =
         withContext(Dispatchers.IO) {
-            if (!isOpen) return@withContext null   // ← dodaj null
+            if (!isOpen) return@withContext null
 
             val dataObj = JSONObject()
             data.forEach { (cmd, parsed) ->
@@ -114,7 +116,7 @@ class ObdDataLogger(private val context: Context) {
                 })
             }
 
-            if (dataObj.length() == 0) return@withContext null   // ← dodaj null
+            if (dataObj.length() == 0) return@withContext null
 
             val record = JSONObject().apply {
                 put("ts", ISO.format(Date()))
@@ -127,7 +129,7 @@ class ObdDataLogger(private val context: Context) {
                 flush()
             }
 
-            record   // ← dodaj return na końcu
+            record
         }
 
     // ─── Zapis pliku ─────────────────────────────────────────────────────────
@@ -135,12 +137,12 @@ class ObdDataLogger(private val context: Context) {
     private fun flush() {
         val file = currentFile ?: return
         try {
-            val root = JSONObject(sessionMeta.toString())  // kopia meta
+            val root = JSONObject(sessionMeta.toString())
             root.put("record_count", recordCount)
             root.put("closed_at", ISO.format(Date()))
             root.put("records", sessionArray)
 
-            file.writeText(root.toString(2))   // pretty-print z wcięciem 2 spacji
+            file.writeText(root.toString(2))
             Log.d(TAG, "Flush: ${file.name} ($recordCount rekordów, ${file.length() / 1024}KB)")
         } catch (e: Exception) {
             Log.e(TAG, "Błąd zapisu: ${e.message}")
@@ -149,7 +151,6 @@ class ObdDataLogger(private val context: Context) {
 
     // ─── Zarządzanie plikami ─────────────────────────────────────────────────
 
-    /** Usuwa najstarsze pliki jeśli przekroczono limit */
     private fun pruneOldFiles(dir: File) {
         val files = dir.listFiles()
             ?.filter { it.name.endsWith(".json") }
@@ -164,7 +165,6 @@ class ObdDataLogger(private val context: Context) {
         }
     }
 
-    /** Zwraca listę wszystkich zapisanych plików sesji */
     fun listSessions(): List<SessionInfo> {
         val dir = File(context.filesDir, DIR_NAME)
         return dir.listFiles()
@@ -187,7 +187,6 @@ class ObdDataLogger(private val context: Context) {
             } ?: emptyList()
     }
 
-    /** Zwraca aktualnie otwarty plik (do wysyłki na backend) */
     fun currentSessionFile(): File? = currentFile
 
     val isSessionOpen: Boolean get() = isOpen

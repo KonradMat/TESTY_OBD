@@ -151,7 +151,6 @@ fun AppRoot(viewModel: ObdViewModel) {
         }
     }
 
-    // Dialog dodawania pojazdu — globalny, widoczny z każdego ekranu
     if (showAddVehicle) {
         AddVehicleDialog(
             isLoading = isAddingVehicle,
@@ -225,7 +224,7 @@ fun ObdMainScreen(
     val backendUrl = remember { mutableStateOf(viewModel.uploader.backendUrl) }
     val pendingRetryCount = remember { mutableStateOf(viewModel.uploader.pendingRetryCount()) }
 
-    var activeTab by remember(isConnected) { mutableStateOf(0) }
+    var activeTab by remember { mutableStateOf(0) }
 
     Box(
         modifier = Modifier
@@ -282,7 +281,28 @@ fun ObdMainScreen(
                             onDeleteCancel = { viewModel.cancelDeleteVehicle() },
                             onRefreshVehicles = { viewModel.loadVehicles() },
                             connectionState = connectionState,
-                            onConnect = onConnectRequest
+                            onConnect = onConnectRequest,
+                            // Sesje
+                            sessions = sessionFiles,
+                            isLogging = isLogging,
+                            uploadStatus = uploadStatus,
+                            backendUrl = backendUrl.value,
+                            pendingRetryCount = pendingRetryCount.value,
+                            isLoggedIn = viewModel.authManager.isLoggedIn,
+                            onStopLogging = { viewModel.stopLogging() },
+                            onRetryUploads = {
+                                viewModel.retryPendingUploads()
+                                pendingRetryCount.value = viewModel.uploader.pendingRetryCount()
+                            },
+                            onUrlChange = { url ->
+                                viewModel.setBackendUrl(url)
+                                backendUrl.value = url
+                            },
+                            onRefreshSessions = {
+                                viewModel.refreshSessionList()
+                                viewModel.loadVehicles()
+                                pendingRetryCount.value = viewModel.uploader.pendingRetryCount()
+                            }
                         )
                     }
                 } else {
@@ -367,7 +387,18 @@ fun PreConnectTabs(
     onDeleteCancel: () -> Unit,
     onRefreshVehicles: () -> Unit,
     connectionState: ObdBluetoothManager.ConnectionState,
-    onConnect: (BluetoothDevice) -> Unit
+    onConnect: (BluetoothDevice) -> Unit,
+    // Sesje
+    sessions: List<com.obdreader.app.obd.ObdDataLogger.SessionInfo>,
+    isLogging: Boolean,
+    uploadStatus: TelemetryUploader.UploadStatus,
+    backendUrl: String,
+    pendingRetryCount: Int,
+    isLoggedIn: Boolean,
+    onStopLogging: () -> Unit,
+    onRetryUploads: () -> Unit,
+    onUrlChange: (String) -> Unit,
+    onRefreshSessions: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         TabRow(
@@ -382,6 +413,7 @@ fun PreConnectTabs(
                 )
             }
         ) {
+            // Zakładka 0: Pojazdy
             Tab(
                 selected = activeTab == 0,
                 onClick = { onTabChange(0) },
@@ -397,13 +429,15 @@ fun PreConnectTabs(
                         tint = if (activeTab == 0) AccentGreen else TextSecondary
                     )
                     Text(
-                        "Moje pojazdy",
+                        "Pojazdy",
                         color = if (activeTab == 0) AccentGreen else TextSecondary,
                         fontWeight = if (activeTab == 0) FontWeight.Bold else FontWeight.Normal,
                         fontSize = 13.sp
                     )
                 }
             }
+
+            // Zakładka 1: Połącz z OBD
             Tab(
                 selected = activeTab == 1,
                 onClick = { onTabChange(1) },
@@ -419,9 +453,33 @@ fun PreConnectTabs(
                         tint = if (activeTab == 1) AccentGreen else TextSecondary
                     )
                     Text(
-                        "Połącz z OBD",
+                        "Połącz",
                         color = if (activeTab == 1) AccentGreen else TextSecondary,
                         fontWeight = if (activeTab == 1) FontWeight.Bold else FontWeight.Normal,
+                        fontSize = 13.sp
+                    )
+                }
+            }
+
+            // Zakładka 2: Sesje
+            Tab(
+                selected = activeTab == 2,
+                onClick = { onTabChange(2) },
+                modifier = Modifier.height(48.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Storage, null,
+                        modifier = Modifier.size(16.dp),
+                        tint = if (activeTab == 2) AccentGreen else TextSecondary
+                    )
+                    Text(
+                        "Sesje",
+                        color = if (activeTab == 2) AccentGreen else TextSecondary,
+                        fontWeight = if (activeTab == 2) FontWeight.Bold else FontWeight.Normal,
                         fontSize = 13.sp
                     )
                 }
@@ -456,6 +514,23 @@ fun PreConnectTabs(
                     )
                 else -> DeviceSelectionScreen(onConnect = onConnect)
             }
+            2 -> SessionsTab(
+                sessions = sessions,
+                isLogging = isLogging,
+                uploadStatus = uploadStatus,
+                backendUrl = backendUrl,
+                pendingRetryCount = pendingRetryCount,
+                vehicles = vehicles,
+                isLoggedIn = isLoggedIn,
+                isLoadingVehicles = isLoadingVehicles,
+                vehicleError = vehicleError,
+                onStopLogging = onStopLogging,
+                onRefresh = onRefreshSessions,
+                onRetryUploads = onRetryUploads,
+                onUrlChange = onUrlChange,
+                onAddVehicleClick = onAddVehicleClick,
+                onRefreshVehicles = onRefreshVehicles
+            )
         }
     }
 }
@@ -1170,7 +1245,12 @@ fun SessionsTab(
         )
     }
 
-    LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp), contentPadding = PaddingValues(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+        contentPadding = PaddingValues(vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // Status uploadu
         item {
             val (uploadColor, uploadText, uploadSub) = when (val s = uploadStatus) {
                 is TelemetryUploader.UploadStatus.IDLE -> Triple(TextSecondary, "Oczekiwanie", "Nie wysłano jeszcze danych")
@@ -1178,9 +1258,18 @@ fun SessionsTab(
                 is TelemetryUploader.UploadStatus.SUCCESS -> Triple(AccentGreen, "✓ Wysłano ${s.recordsSent} rekordów", s.timestamp.take(19).replace("T", " "))
                 is TelemetryUploader.UploadStatus.FAILED -> Triple(AccentRed, "✗ Błąd: ${s.error}", if (s.willRetry) "Zapisano do retry" else "")
             }
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = uploadColor.copy(alpha = 0.08f)), border = BorderStroke(1.dp, uploadColor.copy(alpha = 0.4f))) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = uploadColor.copy(alpha = 0.08f)),
+                border = BorderStroke(1.dp, uploadColor.copy(alpha = 0.4f))
+            ) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
                         Column(Modifier.weight(1f)) {
                             Text("STATUS UPLOADU", fontSize = 10.sp, color = TextSecondary, letterSpacing = 1.sp)
                             Text(uploadText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = uploadColor)
@@ -1189,16 +1278,28 @@ fun SessionsTab(
                         if (pendingRetryCount > 0) {
                             Column(horizontalAlignment = Alignment.End) {
                                 Text("$pendingRetryCount do retry", fontSize = 11.sp, color = AccentOrange)
-                                TextButton(onClick = onRetryUploads) { Text("Wyślij teraz", color = AccentOrange, fontSize = 12.sp) }
+                                TextButton(onClick = onRetryUploads) {
+                                    Text("Wyślij teraz", color = AccentOrange, fontSize = 12.sp)
+                                }
                             }
                         }
                     }
                 }
             }
         }
+
+        // Endpoint backendu
         item {
-            Card(modifier = Modifier.fillMaxWidth().clickable { showUrlDialog = true }, shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = CardBackground)) {
-                Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable { showUrlDialog = true },
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = CardBackground)
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
                     Column(Modifier.weight(1f)) {
                         Text("ENDPOINT BACKENDU", fontSize = 10.sp, color = TextSecondary, letterSpacing = 1.sp)
                         Text(backendUrl, fontSize = 12.sp, color = AccentBlue, fontFamily = FontFamily.Monospace, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -1207,45 +1308,106 @@ fun SessionsTab(
                 }
             }
         }
+
+        // Status logowania
         item {
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = if (isLogging) AccentGreen.copy(alpha = 0.08f) else CardBackground), border = BorderStroke(1.dp, if (isLogging) AccentGreen.copy(0.4f) else TextSecondary.copy(0.15f))) {
-                Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isLogging) AccentGreen.copy(alpha = 0.08f) else CardBackground
+                ),
+                border = BorderStroke(1.dp, if (isLogging) AccentGreen.copy(0.4f) else TextSecondary.copy(0.15f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(8.dp).clip(CircleShape).background(if (isLogging) AccentGreen else TextSecondary))
                         Spacer(Modifier.width(10.dp))
                         Column {
-                            Text(if (isLogging) "Logowanie aktywne" else "Logowanie nieaktywne", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = if (isLogging) AccentGreen else TextSecondary)
-                            Text("Dane zapisywane do JSON + wysyłane na backend", fontSize = 11.sp, color = TextSecondary)
+                            Text(
+                                if (isLogging) "Logowanie aktywne" else "Logowanie nieaktywne",
+                                fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
+                                color = if (isLogging) AccentGreen else TextSecondary
+                            )
+                            Text(
+                                "Dane zapisywane do JSON + wysyłane na backend",
+                                fontSize = 11.sp, color = TextSecondary
+                            )
                         }
                     }
-                    if (isLogging) { TextButton(onClick = onStopLogging) { Text("Zatrzymaj", color = AccentRed, fontSize = 13.sp) } }
+                    if (isLogging) {
+                        TextButton(onClick = onStopLogging) {
+                            Text("Zatrzymaj", color = AccentRed, fontSize = 13.sp)
+                        }
+                    }
                 }
             }
         }
+
+        // Pojazdy
         item {
             VehiclesSection(
-                vehicles = vehicles, isLoggedIn = isLoggedIn,
-                isLoadingVehicles = isLoadingVehicles, vehicleError = vehicleError,
-                onAddVehicleClick = onAddVehicleClick, onRefresh = onRefreshVehicles
+                vehicles = vehicles,
+                isLoggedIn = isLoggedIn,
+                isLoadingVehicles = isLoadingVehicles,
+                vehicleError = vehicleError,
+                onAddVehicleClick = onAddVehicleClick,
+                onRefresh = onRefreshVehicles
             )
         }
-        item { Text("ZAPISANE SESJE (${sessions.size})", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextSecondary, letterSpacing = 1.5.sp, modifier = Modifier.padding(top = 4.dp)) }
-        if (sessions.isEmpty()) {
-            item { Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { Text("Brak zapisanych sesji", color = TextSecondary) } }
+
+        // Lista sesji
+        item {
+            Text(
+                "ZAPISANE SESJE (${sessions.size})",
+                fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextSecondary,
+                letterSpacing = 1.5.sp, modifier = Modifier.padding(top = 4.dp)
+            )
         }
+
+        if (sessions.isEmpty()) {
+            item {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Brak zapisanych sesji", color = TextSecondary)
+                }
+            }
+        }
+
         items(sessions) { session ->
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp), colors = CardDefaults.cardColors(containerColor = CardBackground)) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = CardBackground)
+            ) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(session.sessionId, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary, fontFamily = FontFamily.Monospace)
                         Text("${session.sizeKb} KB", fontSize = 12.sp, color = AccentBlue)
                     }
                     Spacer(Modifier.height(4.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("${session.recordCount} rek.", fontSize = 11.sp, color = TextSecondary)
-                        if (session.vin.isNotBlank()) Text("VIN: ${session.vin.take(17)}", fontSize = 11.sp, color = TextSecondary, fontFamily = FontFamily.Monospace)
+                        if (session.vin.isNotBlank()) {
+                            Text("VIN: ${session.vin.take(17)}", fontSize = 11.sp, color = TextSecondary, fontFamily = FontFamily.Monospace)
+                        }
                     }
-                    Text(session.file.absolutePath, fontSize = 10.sp, color = TextSecondary.copy(alpha = 0.4f), modifier = Modifier.padding(top = 2.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        session.file.absolutePath,
+                        fontSize = 10.sp, color = TextSecondary.copy(alpha = 0.4f),
+                        modifier = Modifier.padding(top = 2.dp),
+                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         }

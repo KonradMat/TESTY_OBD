@@ -71,9 +71,6 @@ object ObdResponseParser {
                 ObdCommand.O2_SENSOR_2_1 -> parseO2Voltage(cleaned, command)
                 ObdCommand.O2_SENSOR_2_2 -> parseO2Voltage(cleaned, command)
                 ObdCommand.VIN -> parseAscii(cleaned, command)
-                ObdCommand.ECU_NAME -> parseAscii(cleaned, command)
-                ObdCommand.CALIBRATION_ID -> parseAscii(cleaned, command)
-                ObdCommand.CVN -> ParsedValue(cleaned, null, cleaned, command.unit)
                 ObdCommand.STATUS -> parseStatus(cleaned, command)
                 ObdCommand.FREEZE_DTC -> ParsedValue(cleaned, null, cleaned, command.unit)
                 ObdCommand.OBD_COMPLIANCE -> parseObdCompliance(cleaned, command)
@@ -432,37 +429,78 @@ object ObdResponseParser {
         return ParsedValue(r, kPa, "%.0f".format(kPa), cmd.unit)
     }
 
+    /**
+     * Parser ASCII dla trybu 09 — VIN, Calibration ID, ECU Name itp.
+     *
+     * Obsługuje dwa formaty odpowiedzi:
+     *
+     * Format A — VIN (PID 0902), pojedynczy blok z licznikiem:
+     *   "49 02 01 31 57 30 4C 34 38 ..." → drop nagłówek "49 02 [count]" → ASCII
+     *
+     * Format B — Calibration ID (PID 0904), ECU Name (PID 090A), wieloblokowy:
+     *   "49 04 01 30 33 38 39  49 04 02 30 36 30 31  49 04 03 32 47 4A 20"
+     *   Każdy blok: "49 [pid] [nr_bloku] [4 bajty danych]"
+     *   Numer bloku (01,02,03) jest pomijany, zbieramy tylko bajty danych.
+     *   Stary parser brał drop(2) i zostawiał numery bloków w danych → śmieci.
+     */
     private fun parseAscii(r: String, cmd: ObdCommand): ParsedValue {
-        // VIN odpowiedź ELM327 wygląda tak (wieloliniowa ISO 15765):
-        // "014 \r 0: 49 02 01 31 57 30 \r 1: 4C 34 38 36 34 52 \r 2: 30 39 35 31 30 39 36"
-        // Musimy: 1) usunąć nagłówki ramek ("0:", "1:", "2:" itd.)
-        //         2) zebrać wszystkie bajty hex
-        //         3) pominąć nagłówek OBD (49 02 01) lub (41 xx)
-        //         4) zamienić hex na ASCII
-
-        // Usuń nagłówki ramek wieloliniowych: "0:", "1:", "014", itp.
-        val cleaned = r
-            .replace(Regex("\\d+:"), " ")   // usuń "0:", "1:", "2:"
-            .replace(Regex("\\b\\d{3}\\b"), " ") // usuń bajt długości "014"
-            .replace(Regex("[^0-9A-F ]"), " ") // zostaw tylko hex i spacje
+        // Usuń nagłówki ramek wieloliniowych
+        val stripped = r
+            .replace(Regex("\\d+:"), " ")
+            .replace(Regex("\b[0-9A-F]{3}\b"), " ")
+            .replace(Regex("[^0-9A-Fa-f ]"), " ")
             .trim()
+            .uppercase()
 
-        val tokens = cleaned.split(Regex("\\s+"))
+        val tokens = stripped.split(Regex("\\s+"))
             .filter { it.length == 2 && it.matches(Regex("[0-9A-F]{2}")) }
 
-        if (tokens.isEmpty()) return ParsedValue(r, null, r.take(50), cmd.unit)
+        if (tokens.isEmpty()) return ParsedValue(r, null, "N/A", cmd.unit)
 
-        // Znajdź nagłówek odpowiedzi i pomiń go
-        // Tryb 09 PID 02 = VIN: nagłówek to "49 02 01" (lub "49 02" + count)
-        // Tryb 09 inne:          nagłówek to "49 XX"
-        val dataBytes = when {
-            tokens.size >= 3 && tokens[0] == "49" && tokens[1] == "02" -> tokens.drop(3)
-            tokens.size >= 2 && tokens[0] == "49" -> tokens.drop(2)
-            tokens.size >= 2 && tokens[0] == "41" -> tokens.drop(2)
-            else -> tokens
+        val dataBytes = mutableListOf<String>()
+
+        // Sprawdź czy to format wieloblokowy (49 XX pojawia się wielokrotnie)
+        val pidByte = when {
+            tokens.size >= 2 && tokens[0] == "49" -> tokens[1]
+            else -> null
         }
 
-        // Hex → ASCII, pomijamy zera i znaki spoza zakresu
+        val multiBlock = pidByte != null &&
+                tokens.zipWithNext().count { (a, b) -> a == "49" && b == pidByte } > 1
+
+        if (multiBlock && pidByte != null) {
+            // Format B: zbierz dane z każdego bloku pomijając "49 [pid] [nr_bloku]"
+            // Każdy blok to: 49 [pid] [nr] [dane...]
+            // Dane między blokami to wszystko co NIE jest nagłówkiem "49 pid nr"
+            var i = 0
+            while (i < tokens.size) {
+                if (i + 2 < tokens.size && tokens[i] == "49" && tokens[i+1] == pidByte) {
+                    // Pomiń "49 [pid] [nr_bloku]"
+                    i += 3
+                    // Zbierz bajty danych do następnego nagłówka "49 [pid]"
+                    while (i < tokens.size) {
+                        val isNextHeader = i + 1 < tokens.size &&
+                                tokens[i] == "49" && tokens[i+1] == pidByte
+                        if (isNextHeader) break
+                        dataBytes.add(tokens[i])
+                        i++
+                    }
+                } else {
+                    i++
+                }
+            }
+        } else {
+            // Format A: pojedynczy blok z licznikiem (VIN, krótkie stringi)
+            val drop = when {
+                tokens.size >= 3 && tokens[0] == "49" && tokens[1] == "02" -> 3 // VIN: 49 02 [count]
+                tokens.size >= 3 && tokens[0] == "49" -> 3                       // inne: 49 [pid] [count]
+                tokens.size >= 2 && tokens[0] == "41" -> 2
+                else -> 0
+            }
+            dataBytes.addAll(tokens.drop(drop))
+        }
+
+        // Hex → ASCII, pomijamy znaki spoza zakresu drukowalnego
         val ascii = dataBytes.joinToString("") {
             val c = it.toIntOrNull(16) ?: 0
             if (c in 32..126) c.toChar().toString() else ""
@@ -502,7 +540,7 @@ object ObdResponseParser {
         val d = extractDataBytes(r)
         if (d.size < 4) return ParsedValue(r, null, "N/A", cmd.unit)
         val v = ((d[0].toLong() shl 24) or (d[1].toLong() shl 16) or
-                 (d[2].toLong() shl 8) or d[3].toLong()).toDouble()
+                (d[2].toLong() shl 8) or d[3].toLong()).toDouble()
         return ParsedValue(r, v, "%.0f".format(v), cmd.unit)
     }
 
@@ -771,7 +809,7 @@ object ObdResponseParser {
                     else -> gear.toString()
                 }
                 val display = if (ratio > 0.01) "$gearLabel (${String.format("%.3f", ratio)}:1)"
-                              else gearLabel
+                else gearLabel
                 ParsedValue(r, gear.toDouble(), display, cmd.unit)
             }
             d.size >= 1 -> {
@@ -889,7 +927,7 @@ object ObdResponseParser {
         }
 
         val display = if (cvnList.isEmpty()) r.take(30)
-                      else cvnList.mapIndexed { idx, v -> "CVN${idx+1}: $v" }.joinToString(" | ")
+        else cvnList.mapIndexed { idx, v -> "CVN${idx+1}: $v" }.joinToString(" | ")
         return ParsedValue(r, null, display, cmd.unit)
     }
     // =========================================================================

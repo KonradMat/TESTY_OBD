@@ -40,19 +40,16 @@ class TelemetryUploader(private val context: Context) {
     // ─── Konfiguracja (można zmienić w runtime) ───────────────────────────────
 
     var backendUrl: String = "https://api.nightingales.pl/api/Telemetry/upload"
-        // Działa z: adb reverse tcp:5032 tcp:5032 (telefon USB)
-        // Na fizycznym urządzeniu zmień na adres IP serwera, np. "http://192.168.1.100:5032/..."
 
     var tokenProvider: (() -> String?)? = null
 
+    var vehicleId: Int = 0
+
     var uploadIntervalRecords: Int = 30
-        // Wyślij batch co N rekordów (przy ~1s/rekord = co ~30 sekund)
 
     var uploadOnSessionClose: Boolean = true
-        // Wyślij cały plik po zamknięciu sesji
 
     var retryOnWifi: Boolean = true
-        // Ponów nieudane wysyłki gdy pojawi się WiFi
 
     // ─── Stan ─────────────────────────────────────────────────────────────────
 
@@ -60,8 +57,6 @@ class TelemetryUploader(private val context: Context) {
     private var sessionMeta  = JSONObject()
     var lastUploadStatus: UploadStatus = UploadStatus.IDLE
         private set
-
-    var vehicleId: Int = 0
 
     sealed class UploadStatus {
         object IDLE       : UploadStatus()
@@ -74,7 +69,6 @@ class TelemetryUploader(private val context: Context) {
 
     /** Wywoływane przez ObdViewModel przy każdym nowym rekordzie */
     suspend fun onNewRecord(record: JSONObject, meta: JSONObject): Boolean {
-        // Aktualizacja bufora zawsze na IO (bezpieczna operacja na liście)
         return withContext(Dispatchers.IO) {
             sessionMeta = meta
             pendingBatch.add(record)
@@ -91,14 +85,13 @@ class TelemetryUploader(private val context: Context) {
     suspend fun uploadSessionFile(file: File): Boolean = withContext(Dispatchers.IO) {
         if (!uploadOnSessionClose) return@withContext false
         try {
-            // Wczytaj JSON z pliku i dodaj brakujące pola
             val json = JSONObject(file.readText())
             json.put("vehicle_id", vehicleId)
             if (!json.has("closed_at") || json.optString("closed_at").isBlank()) {
                 json.put("closed_at", ISO.format(Date()))
             }
-            json.remove("batch")       // backend nie zna tego pola
-            json.remove("uploaded_at") // backend nie zna tego pola
+            json.remove("batch")
+            json.remove("uploaded_at")
 
             val ok = postJson(json.toString())
             if (ok) {
@@ -129,7 +122,10 @@ class TelemetryUploader(private val context: Context) {
 
         files.forEach { file ->
             try {
-                val ok = postJson(file.readText())
+                // Zaktualizuj vehicle_id przed wysłaniem
+                val json = JSONObject(file.readText())
+                if (vehicleId > 0) json.put("vehicle_id", vehicleId)
+                val ok = postJson(json.toString())
                 if (ok) {
                     file.delete()
                     successCount++
@@ -160,18 +156,19 @@ class TelemetryUploader(private val context: Context) {
 
         val now = ISO.format(Date())
 
+        Log.d(TAG, "Upload batch: vehicleId=$vehicleId, session=${meta.optString("session_id")}")
+
         val payload = JSONObject().apply {
-            put("vehicle_id",   vehicleId)                    // ← NOWE: wymagane przez backend
+            put("vehicle_id",   vehicleId)
             put("session_id",   meta.optString("session_id"))
             put("vin",          meta.optString("vin"))
             put("started_at",   meta.optString("started_at"))
-            put("closed_at",    now)                          // ← NOWE: wymagane przez backend
+            put("closed_at",    now)
             put("app_version",  "1.0")
             put("record_count", records.size)
             val arr = org.json.JSONArray()
             records.forEach { arr.put(it) }
             put("records", arr)
-            // usunięte: "uploaded_at" i "batch" - backend ich nie zna
         }
 
         val ok = try {
@@ -198,10 +195,6 @@ class TelemetryUploader(private val context: Context) {
         ok
     }
 
-    /**
-     * Wykonuje HTTP POST z JSON body.
-     * Używa tylko standardowej biblioteki Java – bez zewnętrznych zależności.
-     */
     private fun postJson(jsonBody: String): Boolean {
         val url = URL(backendUrl)
         val conn = url.openConnection() as HttpURLConnection
@@ -215,7 +208,6 @@ class TelemetryUploader(private val context: Context) {
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 setRequestProperty("Accept", "application/json")
                 setRequestProperty("User-Agent", "OBD2Reader-Android/1.0")
-                // ← NOWE: dodaj token JWT jeśli dostępny
                 tokenProvider?.invoke()?.let {
                     setRequestProperty("Authorization", "Bearer $it")
                 }
@@ -227,7 +219,6 @@ class TelemetryUploader(private val context: Context) {
             }
 
             val code = conn.responseCode
-            // ← NOWE: loguj kod + body błędu żeby widzieć co zwraca backend
             if (code !in 200..299) {
                 val errBody = try {
                     conn.errorStream?.bufferedReader()?.readText() ?: "(brak body)"
@@ -260,7 +251,6 @@ class TelemetryUploader(private val context: Context) {
             val dest = File(retryDir, file.name)
             file.copyTo(dest, overwrite = true)
             Log.d(TAG, "Zapisano do retry: ${file.name}")
-            // Usuń stare pliki retry jeśli za dużo
             pruneRetry(retryDir)
         } catch (e: Exception) {
             Log.e(TAG, "Błąd zapisu retry: ${e.message}")
@@ -287,7 +277,6 @@ class TelemetryUploader(private val context: Context) {
         }
     }
 
-    /** Sprawdza czy jest połączenie z internetem */
     fun isNetworkAvailable(): Boolean {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val net = cm.activeNetwork ?: return false
