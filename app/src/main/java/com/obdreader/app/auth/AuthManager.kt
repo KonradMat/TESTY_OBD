@@ -50,10 +50,6 @@ class AuthManager(private val context: Context) {
         data class Error(val message: String) : AuthResult()
     }
 
-    /**
-     * Rejestracja nowego konta.
-     * POST /api/Auth/register
-     */
     suspend fun register(
         email: String,
         firstName: String,
@@ -80,10 +76,6 @@ class AuthManager(private val context: Context) {
         }
     }
 
-    /**
-     * Logowanie.
-     * POST /api/Auth/login
-     */
     suspend fun login(email: String, password: String): AuthResult =
         withContext(Dispatchers.IO) {
             try {
@@ -111,20 +103,16 @@ class AuthManager(private val context: Context) {
             }
         }
 
-    // ─── Vehicles endpoint ─────────────────────────────────────────────────────
+    // ─── Vehicles endpoint ────────────────────────────────────────────────────
 
     sealed class VehicleResult {
         data class Success(val vehicles: List<Vehicle>) : VehicleResult()
         data class Added(val id: Int?) : VehicleResult()
         object Deleted : VehicleResult()
+        object Updated : VehicleResult()
         data class Error(val message: String) : VehicleResult()
     }
 
-    /**
-     * Model pojazdu — year jako Int zgodnie z API.
-     * fuelType i pola techniczne są opcjonalne (nullable) bo stary backend
-     * mógł ich nie zwracać w GET; dodajemy je tylko przy POST.
-     */
     data class Vehicle(
         val id: Int,
         val name: String,
@@ -140,10 +128,6 @@ class AuthManager(private val context: Context) {
         val yearLabel: String get() = if (year > 0) year.toString() else ""
     }
 
-    /**
-     * Pobiera listę pojazdów użytkownika.
-     * GET /api/Vehicles
-     */
     suspend fun getVehicles(): VehicleResult = withContext(Dispatchers.IO) {
         try {
             val response = getJson("$BASE_URL/api/Vehicles")
@@ -177,18 +161,6 @@ class AuthManager(private val context: Context) {
         }
     }
 
-    /**
-     * Dodaje nowy pojazd.
-     * POST /api/Vehicles
-     *
-     * API wymaga wszystkich pól z odpowiednimi typami:
-     *   year               → Int  (nie String!)
-     *   fuelType           → String ("gasoline" | "diesel" | "lpg" | "cng" | "electric" | "hybrid")
-     *   engineDisplacementL → Double
-     *   cylinderCount      → Int
-     *   tankCapacityL      → Int
-     *   vehicleMassKg      → Int
-     */
     suspend fun addVehicle(
         name: String,
         make: String,
@@ -216,13 +188,10 @@ class AuthManager(private val context: Context) {
             val response = postJson("$BASE_URL/api/Vehicles", body.toString())
             Log.d(TAG, "addVehicle response: ${response.first} | ${response.second}")
             if (response.first in 200..299) {
-                val id = try {
-                    JSONObject(response.second).optInt("id")
-                } catch (e: Exception) { null }
+                val id = try { JSONObject(response.second).optInt("id") } catch (e: Exception) { null }
                 VehicleResult.Added(id)
             } else {
-                val msg = parseErrorMessage(response.second)
-                    ?: "Błąd dodawania pojazdu (${response.first})"
+                val msg = parseErrorMessage(response.second) ?: "Błąd dodawania pojazdu (${response.first})"
                 VehicleResult.Error(msg)
             }
         } catch (e: Exception) {
@@ -232,9 +201,48 @@ class AuthManager(private val context: Context) {
     }
 
     /**
-     * Usuwanie pojazd.
-     * DELETE /api/Vehicles/{id}
+     * Aktualizuje dane pojazdu.
+     * PUT /api/Vehicles/{id}
      */
+    suspend fun updateVehicle(
+        id: Int,
+        name: String,
+        make: String,
+        model: String,
+        year: Int,
+        fuelType: String,
+        engineDisplacementL: Double,
+        cylinderCount: Int,
+        tankCapacityL: Int,
+        vehicleMassKg: Int
+    ): VehicleResult = withContext(Dispatchers.IO) {
+        try {
+            val body = JSONObject().apply {
+                put("name",                name)
+                put("make",                make)
+                put("model",               model)
+                put("year",                year)
+                put("fuelType",            fuelType)
+                put("engineDisplacementL", engineDisplacementL)
+                put("cylinderCount",       cylinderCount)
+                put("tankCapacityL",       tankCapacityL)
+                put("vehicleMassKg",       vehicleMassKg)
+            }
+            Log.d(TAG, "updateVehicle[$id] body: ${body.toString(2)}")
+            val response = putJson("$BASE_URL/api/Vehicles/$id", body.toString())
+            Log.d(TAG, "updateVehicle[$id] response: ${response.first} | ${response.second}")
+            if (response.first in 200..299) {
+                VehicleResult.Updated
+            } else {
+                val msg = parseErrorMessage(response.second) ?: "Błąd aktualizacji pojazdu (${response.first})"
+                VehicleResult.Error(msg)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Błąd updateVehicle: ${e.message}")
+            VehicleResult.Error("Brak połączenia z serwerem")
+        }
+    }
+
     suspend fun deleteVehicle(id: Int): VehicleResult = withContext(Dispatchers.IO) {
         try {
             val response = deleteJson("$BASE_URL/api/Vehicles/$id")
@@ -250,6 +258,8 @@ class AuthManager(private val context: Context) {
         }
     }
 
+    // ─── HTTP helpers ─────────────────────────────────────────────────────────
+
     private fun postJson(urlStr: String, jsonBody: String): Pair<Int, String> {
         val url = URL(urlStr)
         val conn = url.openConnection() as HttpURLConnection
@@ -264,16 +274,34 @@ class AuthManager(private val context: Context) {
                 setRequestProperty("Accept", "application/json")
                 token?.let { setRequestProperty("Authorization", "Bearer $it") }
             }
-            OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use {
-                it.write(jsonBody); it.flush()
-            }
+            OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(jsonBody); it.flush() }
             val code = conn.responseCode
             val body = try { conn.inputStream.bufferedReader().readText() }
             catch (e: Exception) { conn.errorStream?.bufferedReader()?.readText() ?: "" }
             Pair(code, body)
-        } finally {
-            conn.disconnect()
-        }
+        } finally { conn.disconnect() }
+    }
+
+    private fun putJson(urlStr: String, jsonBody: String): Pair<Int, String> {
+        val url = URL(urlStr)
+        val conn = url.openConnection() as HttpURLConnection
+        return try {
+            conn.apply {
+                requestMethod = "PUT"
+                doOutput = true
+                doInput = true
+                connectTimeout = CONNECT_TIMEOUT_MS
+                readTimeout = READ_TIMEOUT_MS
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("Accept", "application/json")
+                token?.let { setRequestProperty("Authorization", "Bearer $it") }
+            }
+            OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(jsonBody); it.flush() }
+            val code = conn.responseCode
+            val body = try { conn.inputStream.bufferedReader().readText() }
+            catch (e: Exception) { conn.errorStream?.bufferedReader()?.readText() ?: "" }
+            Pair(code, body)
+        } finally { conn.disconnect() }
     }
 
     private fun getJson(urlStr: String): Pair<Int, String> {
@@ -292,9 +320,7 @@ class AuthManager(private val context: Context) {
             val body = try { conn.inputStream.bufferedReader().readText() }
             catch (e: Exception) { conn.errorStream?.bufferedReader()?.readText() ?: "" }
             Pair(code, body)
-        } finally {
-            conn.disconnect()
-        }
+        } finally { conn.disconnect() }
     }
 
     private fun deleteJson(urlStr: String): Pair<Int, String> {
@@ -313,9 +339,7 @@ class AuthManager(private val context: Context) {
             val body = try { conn.inputStream.bufferedReader().readText() }
             catch (e: Exception) { conn.errorStream?.bufferedReader()?.readText() ?: "" }
             Pair(code, body)
-        } finally {
-            conn.disconnect()
-        }
+        } finally { conn.disconnect() }
     }
 
     private fun extractToken(body: String): String? {
@@ -333,16 +357,12 @@ class AuthManager(private val context: Context) {
     private fun parseErrorMessage(body: String): String? {
         return try {
             val obj = JSONObject(body)
-            // Obsługa ASP.NET Core ValidationProblemDetails
-            // { "errors": { "Year": ["..."] }, "title": "One or more validation errors..." }
             val errors = obj.optJSONObject("errors")
             if (errors != null && errors.length() > 0) {
                 val sb = StringBuilder()
                 errors.keys().forEach { key ->
                     val arr = errors.optJSONArray(key)
-                    if (arr != null && arr.length() > 0) {
-                        sb.append("$key: ${arr.getString(0)}\n")
-                    }
+                    if (arr != null && arr.length() > 0) sb.append("$key: ${arr.getString(0)}\n")
                 }
                 val errStr = sb.toString().trim()
                 if (errStr.isNotBlank()) return errStr

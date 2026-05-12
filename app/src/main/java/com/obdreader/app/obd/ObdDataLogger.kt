@@ -69,7 +69,6 @@ class ObdDataLogger(private val context: Context) {
 
         sessionMeta = JSONObject().apply {
             put("session_id", sessionId)
-            put("vin", vin)
             put("started_at", ISO.format(now))
             put("app_version", "1.0")
         }

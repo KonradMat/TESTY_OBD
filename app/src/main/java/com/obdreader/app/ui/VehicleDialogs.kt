@@ -26,11 +26,9 @@ import com.obdreader.app.auth.AuthManager
 private data class FuelOption(val apiValue: String, val label: String, val icon: String)
 
 private val FUEL_OPTIONS = listOf(
-    FuelOption("gasoline", "Benzyna",     "⛽"),
+    FuelOption("petrol",   "Benzyna",     "⛽"),
     FuelOption("diesel",   "Diesel",      "🛢"),
     FuelOption("lpg",      "LPG",         "🔵"),
-    FuelOption("cng",      "CNG",         "💨"),
-    FuelOption("electric", "Elektryczny", "⚡"),
     FuelOption("hybrid",   "Hybryda",     "🔋")
 )
 

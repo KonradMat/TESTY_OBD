@@ -87,9 +87,12 @@ class TelemetryUploader(private val context: Context) {
         try {
             val json = JSONObject(file.readText())
             json.put("vehicle_id", vehicleId)
+            json.remove("vin")
+            json.remove("record_count")
             if (!json.has("closed_at") || json.optString("closed_at").isBlank()) {
                 json.put("closed_at", ISO.format(Date()))
             }
+            json.remove("app_version")
             json.remove("batch")
             json.remove("uploaded_at")
 
@@ -125,6 +128,9 @@ class TelemetryUploader(private val context: Context) {
                 // Zaktualizuj vehicle_id przed wysłaniem
                 val json = JSONObject(file.readText())
                 if (vehicleId > 0) json.put("vehicle_id", vehicleId)
+                json.remove("vin")
+                json.remove("record_count")
+                json.remove("app_version")
                 val ok = postJson(json.toString())
                 if (ok) {
                     file.delete()
@@ -161,11 +167,8 @@ class TelemetryUploader(private val context: Context) {
         val payload = JSONObject().apply {
             put("vehicle_id",   vehicleId)
             put("session_id",   meta.optString("session_id"))
-            put("vin",          meta.optString("vin"))
             put("started_at",   meta.optString("started_at"))
             put("closed_at",    now)
-            put("app_version",  "1.0")
-            put("record_count", records.size)
             val arr = org.json.JSONArray()
             records.forEach { arr.put(it) }
             put("records", arr)

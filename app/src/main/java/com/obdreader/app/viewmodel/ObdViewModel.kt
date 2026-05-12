@@ -27,7 +27,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     val uploader         = TelemetryUploader(application)
     val authManager      = AuthManager(application)
 
-    // ─── Priorytety / interwały ───────────────────────────────────────────────
     private val BASE_INTERVAL_MS = 1000L
     private val MEDIUM_EVERY     = 5
     private val LOW_EVERY        = 30
@@ -49,6 +48,9 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     private val _vehicles = MutableStateFlow<List<AuthManager.Vehicle>>(emptyList())
     val vehicles: StateFlow<List<AuthManager.Vehicle>> = _vehicles.asStateFlow()
 
+    private val _selectedVehicleId = MutableStateFlow<Int?>(null)
+    val selectedVehicleId: StateFlow<Int?> = _selectedVehicleId.asStateFlow()
+
     private val _isLoadingVehicles = MutableStateFlow(false)
     val isLoadingVehicles: StateFlow<Boolean> = _isLoadingVehicles.asStateFlow()
 
@@ -69,6 +71,19 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isDeletingVehicle = MutableStateFlow(false)
     val isDeletingVehicle: StateFlow<Boolean> = _isDeletingVehicle.asStateFlow()
+
+    // ─── Edycja pojazdu ───────────────────────────────────────────────────────
+    private val _vehicleToEdit = MutableStateFlow<AuthManager.Vehicle?>(null)
+    val vehicleToEdit: StateFlow<AuthManager.Vehicle?> = _vehicleToEdit.asStateFlow()
+
+    private val _isEditingVehicle = MutableStateFlow(false)
+    val isEditingVehicle: StateFlow<Boolean> = _isEditingVehicle.asStateFlow()
+
+    private val _editVehicleError = MutableStateFlow<String?>(null)
+    val editVehicleError: StateFlow<String?> = _editVehicleError.asStateFlow()
+
+    private val _showEditVehicleDialog = MutableStateFlow(false)
+    val showEditVehicleDialog: StateFlow<Boolean> = _showEditVehicleDialog.asStateFlow()
 
     // ─── Stan UI (OBD) ────────────────────────────────────────────────────────
     private val _sensorData = MutableStateFlow<Map<ObdCommand, ObdResponseParser.ParsedValue>>(emptyMap())
@@ -118,9 +133,7 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
                     _authPassed.value = true
                     loadVehicles()
                 }
-                is AuthManager.AuthResult.Error -> {
-                    _authError.value = result.message
-                }
+                is AuthManager.AuthResult.Error -> _authError.value = result.message
             }
             _isAuthLoading.value = false
         }
@@ -136,9 +149,7 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
                     _authPassed.value = true
                     loadVehicles()
                 }
-                is AuthManager.AuthResult.Error -> {
-                    _authError.value = result.message
-                }
+                is AuthManager.AuthResult.Error -> _authError.value = result.message
             }
             _isAuthLoading.value = false
         }
@@ -155,6 +166,7 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
         _authPassed.value = false
         _authError.value = null
         _vehicles.value = emptyList()
+        _selectedVehicleId.value = null
         disconnect()
     }
 
@@ -170,13 +182,24 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
             when (val result = authManager.getVehicles()) {
                 is AuthManager.VehicleResult.Success -> {
                     _vehicles.value = result.vehicles
-                    uploader.vehicleId = result.vehicles.firstOrNull()?.id ?: 0
+                    val currentId = _selectedVehicleId.value
+                    val validId = result.vehicles.firstOrNull { it.id == currentId }?.id
+                        ?: result.vehicles.firstOrNull()?.id
+                        ?: 0
+                    _selectedVehicleId.value = if (validId != 0) validId else null
+                    uploader.vehicleId = validId
                 }
                 is AuthManager.VehicleResult.Error -> _vehicleError.value = result.message
                 else -> {}
             }
             _isLoadingVehicles.value = false
         }
+    }
+
+    fun selectVehicle(vehicleId: Int) {
+        _selectedVehicleId.value = vehicleId
+        uploader.vehicleId = vehicleId
+        addLog("Aktywny pojazd: ID=$vehicleId")
     }
 
     fun showAddVehicle() {
@@ -190,38 +213,25 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun addVehicle(
-        name: String,
-        make: String,
-        model: String,
-        year: Int,
-        fuelType: String,
-        engineDisplacementL: Double,
-        cylinderCount: Int,
-        tankCapacityL: Int,
-        vehicleMassKg: Int
+        name: String, make: String, model: String, year: Int,
+        fuelType: String, engineDisplacementL: Double,
+        cylinderCount: Int, tankCapacityL: Int, vehicleMassKg: Int
     ) {
         viewModelScope.launch {
             _isAddingVehicle.value = true
             _addVehicleError.value = null
             when (val result = authManager.addVehicle(
-                name                = name,
-                make                = make,
-                model               = model,
-                year                = year,
-                fuelType            = fuelType,
-                engineDisplacementL = engineDisplacementL,
-                cylinderCount       = cylinderCount,
-                tankCapacityL       = tankCapacityL,
-                vehicleMassKg       = vehicleMassKg
+                name = name, make = make, model = model, year = year,
+                fuelType = fuelType, engineDisplacementL = engineDisplacementL,
+                cylinderCount = cylinderCount, tankCapacityL = tankCapacityL,
+                vehicleMassKg = vehicleMassKg
             )) {
                 is AuthManager.VehicleResult.Added -> {
                     _showAddVehicleDialog.value = false
                     loadVehicles()
                     addLog("Pojazd dodany (ID: ${result.id})")
                 }
-                is AuthManager.VehicleResult.Error -> {
-                    _addVehicleError.value = result.message
-                }
+                is AuthManager.VehicleResult.Error -> _addVehicleError.value = result.message
                 else -> {}
             }
             _isAddingVehicle.value = false
@@ -243,6 +253,11 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
             when (val result = authManager.deleteVehicle(vehicle.id)) {
                 is AuthManager.VehicleResult.Deleted -> {
                     _vehicleToDelete.value = null
+                    // Jeśli usunięto aktywny pojazd — zresetuj wybór
+                    if (_selectedVehicleId.value == vehicle.id) {
+                        _selectedVehicleId.value = null
+                        uploader.vehicleId = 0
+                    }
                     loadVehicles()
                     addLog("Pojazd usunięty: ${vehicle.name}")
                 }
@@ -250,11 +265,49 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
                     _vehicleError.value = result.message
                     _vehicleToDelete.value = null
                 }
-                else -> {
-                    _vehicleToDelete.value = null
-                }
+                else -> _vehicleToDelete.value = null
             }
             _isDeletingVehicle.value = false
+        }
+    }
+
+    // ─── Edycja pojazdu ───────────────────────────────────────────────────────
+
+    fun requestEditVehicle(vehicle: AuthManager.Vehicle) {
+        _editVehicleError.value = null
+        _vehicleToEdit.value = vehicle
+        _showEditVehicleDialog.value = true
+    }
+
+    fun hideEditVehicle() {
+        _showEditVehicleDialog.value = false
+        _editVehicleError.value = null
+    }
+
+    fun editVehicle(
+        id: Int, name: String, make: String, model: String, year: Int,
+        fuelType: String, engineDisplacementL: Double,
+        cylinderCount: Int, tankCapacityL: Int, vehicleMassKg: Int
+    ) {
+        viewModelScope.launch {
+            _isEditingVehicle.value = true
+            _editVehicleError.value = null
+            when (val result = authManager.updateVehicle(
+                id = id, name = name, make = make, model = model, year = year,
+                fuelType = fuelType, engineDisplacementL = engineDisplacementL,
+                cylinderCount = cylinderCount, tankCapacityL = tankCapacityL,
+                vehicleMassKg = vehicleMassKg
+            )) {
+                is AuthManager.VehicleResult.Updated -> {
+                    _showEditVehicleDialog.value = false
+                    _vehicleToEdit.value = null
+                    loadVehicles()
+                    addLog("Pojazd zaktualizowany (ID: $id)")
+                }
+                is AuthManager.VehicleResult.Error -> _editVehicleError.value = result.message
+                else -> {}
+            }
+            _isEditingVehicle.value = false
         }
     }
 
@@ -271,10 +324,7 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
                 val vin = vinInfo.value
                 if (vin.isNotBlank()) addLog("VIN: $vin")
                 if (!_isGuest.value) {
-                    // Upewnij się że vehicleId jest ustawiony przed retry
-                    if (uploader.vehicleId == 0) {
-                        loadVehiclesSync()
-                    }
+                    if (uploader.vehicleId == 0) loadVehiclesSync()
                     val retryCount = uploader.pendingRetryCount()
                     if (retryCount > 0) {
                         addLog("Próba wysłania $retryCount oczekujących plików...")
@@ -307,10 +357,7 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     // ─── Sesja ────────────────────────────────────────────────────────────────
 
     private fun startSession() {
-        dataLogger.openSession(
-            vin = vinInfo.value,
-            email = authManager.savedEmail ?: ""
-        )
+        dataLogger.openSession(vin = vinInfo.value, email = authManager.savedEmail ?: "")
         _isLogging.value = true
         addLog("Sesja JSON: ${dataLogger.currentSessionFile()?.name}")
         addLog("Upload co ${uploader.uploadIntervalRecords} rekordów (~${uploader.uploadIntervalRecords}s)")
@@ -337,8 +384,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshSessionList() { _sessionFiles.value = dataLogger.listSessions() }
 
-    // ─── Ustawienia uploadera ─────────────────────────────────────────────────
-
     fun setBackendUrl(url: String) {
         uploader.backendUrl = url
         addLog("Backend URL: $url")
@@ -356,7 +401,7 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ─── Skanowanie z priorytetami ─────────────────────────────────────────────
+    // ─── Skanowanie z priorytetami ────────────────────────────────────────────
 
     fun startScanning() {
         if (_isScanning.value) return
@@ -394,8 +439,7 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
                             val recordJson = dataLogger.addRecord(_sensorData.value)
                             val metaJson   = buildMetaJson()
                             val uploaded = if (recordJson != null)
-                                uploader.onNewRecord(recordJson, metaJson)
-                            else false
+                                uploader.onNewRecord(recordJson, metaJson) else false
 
                             if (uploaded) {
                                 _uploadStatus.value = uploader.lastUploadStatus
@@ -457,13 +501,16 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
         } ?: "")
     }
 
-    /** Synchroniczne ładowanie pojazdów — używane przed retry przy połączeniu */
     private suspend fun loadVehiclesSync() {
         if (!authManager.isLoggedIn) return
         when (val result = authManager.getVehicles()) {
             is AuthManager.VehicleResult.Success -> {
                 _vehicles.value = result.vehicles
-                uploader.vehicleId = result.vehicles.firstOrNull()?.id ?: 0
+                val currentId = _selectedVehicleId.value
+                val validId = result.vehicles.firstOrNull { it.id == currentId }?.id
+                    ?: result.vehicles.firstOrNull()?.id ?: 0
+                _selectedVehicleId.value = if (validId != 0) validId else null
+                uploader.vehicleId = validId
                 addLog("Pojazd aktywny: ID=${uploader.vehicleId}")
             }
             else -> {}

@@ -64,7 +64,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestBluetoothPermissions()
-
         setContent {
             ObdAppTheme {
                 AppRoot(viewModel = viewModel)
@@ -74,31 +73,16 @@ class MainActivity : ComponentActivity() {
 
     private fun requestBluetoothPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val permissions = arrayOf(
-                Manifest.permission.BLUETOOTH_CONNECT,
-                Manifest.permission.BLUETOOTH_SCAN
-            )
-            if (permissions.any {
-                    ActivityCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-                }) {
+            val permissions = arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN)
+            if (permissions.any { ActivityCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED })
                 ActivityCompat.requestPermissions(this, permissions, 1001)
-            }
         } else {
-            val permissions = arrayOf(
-                Manifest.permission.BLUETOOTH,
-                Manifest.permission.BLUETOOTH_ADMIN,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            )
-            if (permissions.any {
-                    ActivityCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-                }) {
+            val permissions = arrayOf(Manifest.permission.BLUETOOTH, Manifest.permission.BLUETOOTH_ADMIN, Manifest.permission.ACCESS_FINE_LOCATION)
+            if (permissions.any { ActivityCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED })
                 ActivityCompat.requestPermissions(this, permissions, 1001)
-            }
         }
-
-        if (bluetoothAdapter?.isEnabled == false) {
+        if (bluetoothAdapter?.isEnabled == false)
             enableBtLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
-        }
     }
 }
 
@@ -118,43 +102,26 @@ fun AppRoot(viewModel: ObdViewModel) {
     AnimatedContent(
         targetState = authPassed,
         transitionSpec = {
-            if (targetState) {
-                (slideInHorizontally { it } + fadeIn()) togetherWith
-                        (slideOutHorizontally { -it } + fadeOut())
-            } else {
-                (slideInHorizontally { -it } + fadeIn()) togetherWith
-                        (slideOutHorizontally { it } + fadeOut())
-            }
+            if (targetState) (slideInHorizontally { it } + fadeIn()) togetherWith (slideOutHorizontally { -it } + fadeOut())
+            else (slideInHorizontally { -it } + fadeIn()) togetherWith (slideOutHorizontally { it } + fadeOut())
         },
         label = "auth_transition"
     ) { passed ->
         if (!passed) {
             AuthScreen(
-                isLoading = isAuthLoading,
-                errorMessage = authError,
-                onLogin = { email, password ->
-                    viewModel.clearAuthError()
-                    viewModel.login(email, password)
-                },
-                onRegister = { email, firstName, lastName, password ->
-                    viewModel.clearAuthError()
-                    viewModel.register(email, firstName, lastName, password)
-                },
+                isLoading = isAuthLoading, errorMessage = authError,
+                onLogin = { email, password -> viewModel.clearAuthError(); viewModel.login(email, password) },
+                onRegister = { email, firstName, lastName, password -> viewModel.clearAuthError(); viewModel.register(email, firstName, lastName, password) },
                 onGuestContinue = { viewModel.continueAsGuest() }
             )
         } else {
-            ObdMainScreen(
-                viewModel = viewModel,
-                isGuest = isGuest,
-                onConnectRequest = { device -> viewModel.connect(device) }
-            )
+            ObdMainScreen(viewModel = viewModel, isGuest = isGuest, onConnectRequest = { device -> viewModel.connect(device) })
         }
     }
 
     if (showAddVehicle) {
         AddVehicleDialog(
-            isLoading = isAddingVehicle,
-            errorMessage = addVehicleError,
+            isLoading = isAddingVehicle, errorMessage = addVehicleError,
             onAdd = { name, make, model, year, fuelType, engineDispl, cylinders, tank, mass ->
                 viewModel.addVehicle(name, make, model, year, fuelType, engineDispl, cylinders, tank, mass)
             },
@@ -178,30 +145,22 @@ val TextSecondary = Color(0xFF8899AA)
 fun ObdAppTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = darkColorScheme(
-            background = DarkBackground,
-            surface = CardBackground,
-            primary = AccentGreen,
-            secondary = AccentBlue,
-            error = AccentRed,
-            onBackground = TextPrimary,
-            onSurface = TextPrimary
+            background = DarkBackground, surface = CardBackground, primary = AccentGreen,
+            secondary = AccentBlue, error = AccentRed, onBackground = TextPrimary, onSurface = TextPrimary
         ),
         content = content
     )
 }
 
-// ─── Główny ekran aplikacji ────────────────────────────────────────────────────
+// ─── Główny ekran aplikacji ───────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ObdMainScreen(
-    viewModel: ObdViewModel,
-    isGuest: Boolean,
-    onConnectRequest: (BluetoothDevice) -> Unit
-) {
+fun ObdMainScreen(viewModel: ObdViewModel, isGuest: Boolean, onConnectRequest: (BluetoothDevice) -> Unit) {
     val connectionState by viewModel.connectionState.collectAsState()
     val isConnected = connectionState is ObdBluetoothManager.ConnectionState.Connected
 
+    val selectedVehicleId by viewModel.selectedVehicleId.collectAsState()
     val sensorData by viewModel.sensorData.collectAsState()
     val supportedCommands by viewModel.supportedCommands.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
@@ -221,30 +180,25 @@ fun ObdMainScreen(
     val vehicleToDelete by viewModel.vehicleToDelete.collectAsState()
     val isDeletingVehicle by viewModel.isDeletingVehicle.collectAsState()
 
+    // Edycja
+    val vehicleToEdit by viewModel.vehicleToEdit.collectAsState()
+    val isEditingVehicle by viewModel.isEditingVehicle.collectAsState()
+    val editVehicleError by viewModel.editVehicleError.collectAsState()
+    val showEditDialog by viewModel.showEditVehicleDialog.collectAsState()
+
     val backendUrl = remember { mutableStateOf(viewModel.uploader.backendUrl) }
     val pendingRetryCount = remember { mutableStateOf(viewModel.uploader.pendingRetryCount()) }
 
     var activeTab by remember { mutableStateOf(0) }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(DarkBackground)
-    ) {
+    Box(modifier = Modifier.fillMaxSize().background(DarkBackground)) {
         Column(modifier = Modifier.fillMaxSize()) {
-
             ObdHeader(
-                connectionState = connectionState,
-                vinInfo = vinInfo,
-                isScanning = isScanning,
-                isLoggedIn = viewModel.authManager.isLoggedIn,
-                userEmail = viewModel.authManager.savedEmail,
+                connectionState = connectionState, vinInfo = vinInfo, isScanning = isScanning,
+                isLoggedIn = viewModel.authManager.isLoggedIn, userEmail = viewModel.authManager.savedEmail,
                 isGuest = isGuest,
                 onDisconnect = { viewModel.disconnect() },
-                onToggleScan = {
-                    if (isScanning) viewModel.stopScanning()
-                    else viewModel.startScanning()
-                },
+                onToggleScan = { if (isScanning) viewModel.stopScanning() else viewModel.startScanning() },
                 onLogout = { viewModel.logout() }
             )
 
@@ -255,15 +209,14 @@ fun ObdMainScreen(
             ) { connected ->
                 if (!connected) {
                     if (isGuest) {
-                        GuestPreConnectScreen(
-                            connectionState = connectionState,
-                            onConnect = onConnectRequest
-                        )
+                        GuestPreConnectScreen(connectionState = connectionState, onConnect = onConnectRequest)
                     } else {
                         PreConnectTabs(
                             activeTab = activeTab,
                             onTabChange = { activeTab = it },
                             vehicles = vehicles,
+                            selectedVehicleId = selectedVehicleId,
+                            onSelectVehicle = { viewModel.selectVehicle(it) },
                             isLoadingVehicles = isLoadingVehicles,
                             vehicleError = vehicleError,
                             isAddingVehicle = isAddingVehicle,
@@ -271,6 +224,16 @@ fun ObdMainScreen(
                             showAddDialog = showAddDialog,
                             vehicleToDelete = vehicleToDelete,
                             isDeletingVehicle = isDeletingVehicle,
+                            // Edycja
+                            vehicleToEdit = vehicleToEdit,
+                            isEditingVehicle = isEditingVehicle,
+                            editVehicleError = editVehicleError,
+                            showEditDialog = showEditDialog,
+                            onEditRequest = { viewModel.requestEditVehicle(it) },
+                            onEditVehicle = { id, name, make, model, year, fuel, displ, cyl, tank, mass ->
+                                viewModel.editVehicle(id, name, make, model, year, fuel, displ, cyl, tank, mass)
+                            },
+                            onDismissEdit = { viewModel.hideEditVehicle() },
                             onAddVehicleClick = { viewModel.showAddVehicle() },
                             onAddVehicle = { name, make, model, year, fuelType, engineDispl, cylinders, tank, mass ->
                                 viewModel.addVehicle(name, make, model, year, fuelType, engineDispl, cylinders, tank, mass)
@@ -282,7 +245,6 @@ fun ObdMainScreen(
                             onRefreshVehicles = { viewModel.loadVehicles() },
                             connectionState = connectionState,
                             onConnect = onConnectRequest,
-                            // Sesje
                             sessions = sessionFiles,
                             isLogging = isLogging,
                             uploadStatus = uploadStatus,
@@ -294,10 +256,7 @@ fun ObdMainScreen(
                                 viewModel.retryPendingUploads()
                                 pendingRetryCount.value = viewModel.uploader.pendingRetryCount()
                             },
-                            onUrlChange = { url ->
-                                viewModel.setBackendUrl(url)
-                                backendUrl.value = url
-                            },
+                            onUrlChange = { url -> viewModel.setBackendUrl(url); backendUrl.value = url },
                             onRefreshSessions = {
                                 viewModel.refreshSessionList()
                                 viewModel.loadVehicles()
@@ -307,26 +266,15 @@ fun ObdMainScreen(
                     }
                 } else {
                     PostConnectContent(
-                        viewModel = viewModel,
-                        isGuest = isGuest,
-                        activeTab = activeTab,
-                        onTabChange = { activeTab = it },
-                        sensorData = sensorData,
-                        supportedCommands = supportedCommands,
-                        selectedCategory = selectedCategory,
-                        logMessages = logMessages,
-                        isLogging = isLogging,
-                        sessionFiles = sessionFiles,
-                        uploadStatus = uploadStatus,
-                        backendUrl = backendUrl.value,
+                        viewModel = viewModel, isGuest = isGuest,
+                        activeTab = activeTab, onTabChange = { activeTab = it },
+                        sensorData = sensorData, supportedCommands = supportedCommands,
+                        selectedCategory = selectedCategory, logMessages = logMessages,
+                        isLogging = isLogging, sessionFiles = sessionFiles,
+                        uploadStatus = uploadStatus, backendUrl = backendUrl.value,
                         pendingRetryCount = pendingRetryCount.value,
-                        vehicles = vehicles,
-                        isLoadingVehicles = isLoadingVehicles,
-                        vehicleError = vehicleError,
-                        onUrlChange = { url ->
-                            viewModel.setBackendUrl(url)
-                            backendUrl.value = url
-                        },
+                        vehicles = vehicles, isLoadingVehicles = isLoadingVehicles, vehicleError = vehicleError,
+                        onUrlChange = { url -> viewModel.setBackendUrl(url); backendUrl.value = url },
                         onRetryUploads = {
                             viewModel.retryPendingUploads()
                             pendingRetryCount.value = viewModel.uploader.pendingRetryCount()
@@ -349,18 +297,10 @@ fun ObdMainScreen(
 // ─── Ekran przed połączeniem dla gościa ──────────────────────────────────────
 
 @Composable
-fun GuestPreConnectScreen(
-    connectionState: ObdBluetoothManager.ConnectionState,
-    onConnect: (BluetoothDevice) -> Unit
-) {
+fun GuestPreConnectScreen(connectionState: ObdBluetoothManager.ConnectionState, onConnect: (BluetoothDevice) -> Unit) {
     when (connectionState) {
-        is ObdBluetoothManager.ConnectionState.Connecting ->
-            ConnectingScreen(message = connectionState.message)
-        is ObdBluetoothManager.ConnectionState.Error ->
-            DeviceSelectionScreen(
-                onConnect = onConnect,
-                errorBanner = connectionState.message
-            )
+        is ObdBluetoothManager.ConnectionState.Connecting -> ConnectingScreen(message = connectionState.message)
+        is ObdBluetoothManager.ConnectionState.Error -> DeviceSelectionScreen(onConnect = onConnect, errorBanner = connectionState.message)
         else -> DeviceSelectionScreen(onConnect = onConnect)
     }
 }
@@ -372,6 +312,8 @@ fun PreConnectTabs(
     activeTab: Int,
     onTabChange: (Int) -> Unit,
     vehicles: List<com.obdreader.app.auth.AuthManager.Vehicle>,
+    selectedVehicleId: Int?,
+    onSelectVehicle: (Int) -> Unit,
     isLoadingVehicles: Boolean,
     vehicleError: String?,
     isAddingVehicle: Boolean,
@@ -379,6 +321,14 @@ fun PreConnectTabs(
     showAddDialog: Boolean,
     vehicleToDelete: com.obdreader.app.auth.AuthManager.Vehicle?,
     isDeletingVehicle: Boolean,
+    // Edycja
+    vehicleToEdit: com.obdreader.app.auth.AuthManager.Vehicle?,
+    isEditingVehicle: Boolean,
+    editVehicleError: String?,
+    showEditDialog: Boolean,
+    onEditRequest: (com.obdreader.app.auth.AuthManager.Vehicle) -> Unit,
+    onEditVehicle: (Int, String, String, String, Int, String, Double, Int, Int, Int) -> Unit,
+    onDismissEdit: () -> Unit,
     onAddVehicleClick: () -> Unit,
     onAddVehicle: (String, String, String, Int, String, Double, Int, Int, Int) -> Unit,
     onDismissAdd: () -> Unit,
@@ -388,7 +338,6 @@ fun PreConnectTabs(
     onRefreshVehicles: () -> Unit,
     connectionState: ObdBluetoothManager.ConnectionState,
     onConnect: (BluetoothDevice) -> Unit,
-    // Sesje
     sessions: List<com.obdreader.app.obd.ObdDataLogger.SessionInfo>,
     isLogging: Boolean,
     uploadStatus: TelemetryUploader.UploadStatus,
@@ -406,82 +355,25 @@ fun PreConnectTabs(
             containerColor = CardBackground,
             contentColor = AccentGreen,
             indicator = { tabPositions ->
-                TabRowDefaults.Indicator(
-                    modifier = Modifier.tabIndicatorOffset(tabPositions[activeTab]),
-                    color = AccentGreen,
-                    height = 2.dp
-                )
+                TabRowDefaults.Indicator(modifier = Modifier.tabIndicatorOffset(tabPositions[activeTab]), color = AccentGreen, height = 2.dp)
             }
         ) {
-            // Zakładka 0: Pojazdy
-            Tab(
-                selected = activeTab == 0,
-                onClick = { onTabChange(0) },
-                modifier = Modifier.height(48.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        Icons.Default.DirectionsCar, null,
-                        modifier = Modifier.size(16.dp),
-                        tint = if (activeTab == 0) AccentGreen else TextSecondary
-                    )
-                    Text(
-                        "Pojazdy",
-                        color = if (activeTab == 0) AccentGreen else TextSecondary,
-                        fontWeight = if (activeTab == 0) FontWeight.Bold else FontWeight.Normal,
-                        fontSize = 13.sp
-                    )
+            Tab(selected = activeTab == 0, onClick = { onTabChange(0) }, modifier = Modifier.height(48.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Default.DirectionsCar, null, modifier = Modifier.size(16.dp), tint = if (activeTab == 0) AccentGreen else TextSecondary)
+                    Text("Pojazdy", color = if (activeTab == 0) AccentGreen else TextSecondary, fontWeight = if (activeTab == 0) FontWeight.Bold else FontWeight.Normal, fontSize = 13.sp)
                 }
             }
-
-            // Zakładka 1: Połącz z OBD
-            Tab(
-                selected = activeTab == 1,
-                onClick = { onTabChange(1) },
-                modifier = Modifier.height(48.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Bluetooth, null,
-                        modifier = Modifier.size(16.dp),
-                        tint = if (activeTab == 1) AccentGreen else TextSecondary
-                    )
-                    Text(
-                        "Połącz",
-                        color = if (activeTab == 1) AccentGreen else TextSecondary,
-                        fontWeight = if (activeTab == 1) FontWeight.Bold else FontWeight.Normal,
-                        fontSize = 13.sp
-                    )
+            Tab(selected = activeTab == 1, onClick = { onTabChange(1) }, modifier = Modifier.height(48.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Default.Bluetooth, null, modifier = Modifier.size(16.dp), tint = if (activeTab == 1) AccentGreen else TextSecondary)
+                    Text("Połącz", color = if (activeTab == 1) AccentGreen else TextSecondary, fontWeight = if (activeTab == 1) FontWeight.Bold else FontWeight.Normal, fontSize = 13.sp)
                 }
             }
-
-            // Zakładka 2: Sesje
-            Tab(
-                selected = activeTab == 2,
-                onClick = { onTabChange(2) },
-                modifier = Modifier.height(48.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Storage, null,
-                        modifier = Modifier.size(16.dp),
-                        tint = if (activeTab == 2) AccentGreen else TextSecondary
-                    )
-                    Text(
-                        "Sesje",
-                        color = if (activeTab == 2) AccentGreen else TextSecondary,
-                        fontWeight = if (activeTab == 2) FontWeight.Bold else FontWeight.Normal,
-                        fontSize = 13.sp
-                    )
+            Tab(selected = activeTab == 2, onClick = { onTabChange(2) }, modifier = Modifier.height(48.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Default.Storage, null, modifier = Modifier.size(16.dp), tint = if (activeTab == 2) AccentGreen else TextSecondary)
+                    Text("Sesje", color = if (activeTab == 2) AccentGreen else TextSecondary, fontWeight = if (activeTab == 2) FontWeight.Bold else FontWeight.Normal, fontSize = 13.sp)
                 }
             }
         }
@@ -489,6 +381,8 @@ fun PreConnectTabs(
         when (activeTab) {
             0 -> VehiclesScreen(
                 vehicles = vehicles,
+                selectedVehicleId = selectedVehicleId,
+                onSelectVehicle = onSelectVehicle,
                 isLoading = isLoadingVehicles,
                 error = vehicleError,
                 isAddingVehicle = isAddingVehicle,
@@ -496,6 +390,13 @@ fun PreConnectTabs(
                 showAddDialog = showAddDialog,
                 vehicleToDelete = vehicleToDelete,
                 isDeletingVehicle = isDeletingVehicle,
+                vehicleToEdit = vehicleToEdit,
+                isEditingVehicle = isEditingVehicle,
+                editVehicleError = editVehicleError,
+                showEditDialog = showEditDialog,
+                onEditRequest = onEditRequest,
+                onEditVehicle = onEditVehicle,
+                onDismissEdit = onDismissEdit,
                 onAddClick = onAddVehicleClick,
                 onAddVehicle = onAddVehicle,
                 onDismissAdd = onDismissAdd,
@@ -505,31 +406,18 @@ fun PreConnectTabs(
                 onRefresh = onRefreshVehicles
             )
             1 -> when (connectionState) {
-                is ObdBluetoothManager.ConnectionState.Connecting ->
-                    ConnectingScreen(message = connectionState.message)
-                is ObdBluetoothManager.ConnectionState.Error ->
-                    DeviceSelectionScreen(
-                        onConnect = onConnect,
-                        errorBanner = connectionState.message
-                    )
+                is ObdBluetoothManager.ConnectionState.Connecting -> ConnectingScreen(message = connectionState.message)
+                is ObdBluetoothManager.ConnectionState.Error -> DeviceSelectionScreen(onConnect = onConnect, errorBanner = connectionState.message)
                 else -> DeviceSelectionScreen(onConnect = onConnect)
             }
             2 -> SessionsTab(
-                sessions = sessions,
-                isLogging = isLogging,
-                uploadStatus = uploadStatus,
-                backendUrl = backendUrl,
-                pendingRetryCount = pendingRetryCount,
-                vehicles = vehicles,
-                isLoggedIn = isLoggedIn,
-                isLoadingVehicles = isLoadingVehicles,
-                vehicleError = vehicleError,
-                onStopLogging = onStopLogging,
-                onRefresh = onRefreshSessions,
-                onRetryUploads = onRetryUploads,
-                onUrlChange = onUrlChange,
-                onAddVehicleClick = onAddVehicleClick,
-                onRefreshVehicles = onRefreshVehicles
+                sessions = sessions, isLogging = isLogging, uploadStatus = uploadStatus,
+                backendUrl = backendUrl, pendingRetryCount = pendingRetryCount,
+                vehicles = vehicles, isLoggedIn = isLoggedIn,
+                isLoadingVehicles = isLoadingVehicles, vehicleError = vehicleError,
+                onStopLogging = onStopLogging, onRefresh = onRefreshSessions,
+                onRetryUploads = onRetryUploads, onUrlChange = onUrlChange,
+                onAddVehicleClick = onAddVehicleClick, onRefreshVehicles = onRefreshVehicles
             )
         }
     }
@@ -539,94 +427,50 @@ fun PreConnectTabs(
 
 @Composable
 fun PostConnectContent(
-    viewModel: ObdViewModel,
-    isGuest: Boolean,
-    activeTab: Int,
-    onTabChange: (Int) -> Unit,
+    viewModel: ObdViewModel, isGuest: Boolean,
+    activeTab: Int, onTabChange: (Int) -> Unit,
     sensorData: Map<ObdCommand, ObdResponseParser.ParsedValue>,
-    supportedCommands: List<ObdCommand>,
-    selectedCategory: ObdCategory?,
-    logMessages: List<String>,
-    isLogging: Boolean,
+    supportedCommands: List<ObdCommand>, selectedCategory: ObdCategory?,
+    logMessages: List<String>, isLogging: Boolean,
     sessionFiles: List<com.obdreader.app.obd.ObdDataLogger.SessionInfo>,
-    uploadStatus: TelemetryUploader.UploadStatus,
-    backendUrl: String,
-    pendingRetryCount: Int,
+    uploadStatus: TelemetryUploader.UploadStatus, backendUrl: String, pendingRetryCount: Int,
     vehicles: List<com.obdreader.app.auth.AuthManager.Vehicle>,
-    isLoadingVehicles: Boolean,
-    vehicleError: String?,
-    onUrlChange: (String) -> Unit,
-    onRetryUploads: () -> Unit,
-    onStopLogging: () -> Unit,
-    onRefreshSessions: () -> Unit,
-    onAddVehicleClick: () -> Unit,
-    onRefreshVehicles: () -> Unit
+    isLoadingVehicles: Boolean, vehicleError: String?,
+    onUrlChange: (String) -> Unit, onRetryUploads: () -> Unit,
+    onStopLogging: () -> Unit, onRefreshSessions: () -> Unit,
+    onAddVehicleClick: () -> Unit, onRefreshVehicles: () -> Unit
 ) {
-    val tabs = if (isGuest) {
-        listOf("Dashboard", "Czujniki", "Logi")
-    } else {
-        listOf("Dashboard", "Czujniki", "Logi", "Sesje")
-    }
-
+    val tabs = if (isGuest) listOf("Dashboard", "Czujniki", "Logi") else listOf("Dashboard", "Czujniki", "Logi", "Sesje")
     val safeTab = activeTab.coerceIn(0, tabs.lastIndex)
 
     Column(modifier = Modifier.fillMaxSize()) {
         TabRow(
-            selectedTabIndex = safeTab,
-            containerColor = CardBackground,
-            contentColor = AccentGreen,
+            selectedTabIndex = safeTab, containerColor = CardBackground, contentColor = AccentGreen,
             indicator = { tabPositions ->
-                TabRowDefaults.Indicator(
-                    modifier = Modifier.tabIndicatorOffset(tabPositions[safeTab]),
-                    color = AccentGreen,
-                    height = 2.dp
-                )
+                TabRowDefaults.Indicator(modifier = Modifier.tabIndicatorOffset(tabPositions[safeTab]), color = AccentGreen, height = 2.dp)
             }
         ) {
             tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = safeTab == index,
-                    onClick = { onTabChange(index) },
-                    modifier = Modifier.height(48.dp)
-                ) {
-                    Text(
-                        title,
-                        color = if (safeTab == index) AccentGreen else TextSecondary,
+                Tab(selected = safeTab == index, onClick = { onTabChange(index) }, modifier = Modifier.height(48.dp)) {
+                    Text(title, color = if (safeTab == index) AccentGreen else TextSecondary,
                         fontWeight = if (safeTab == index) FontWeight.Bold else FontWeight.Normal,
-                        fontSize = 13.sp,
-                        maxLines = 1,
-                        softWrap = false
-                    )
+                        fontSize = 13.sp, maxLines = 1, softWrap = false)
                 }
             }
         }
-
         when (safeTab) {
             0 -> DashboardTab(sensorData = sensorData)
-            1 -> SensorsTab(
-                sensorData = sensorData,
-                supportedCommands = supportedCommands,
-                selectedCategory = selectedCategory,
-                onCategorySelect = { viewModel.selectCategory(it) }
-            )
+            1 -> SensorsTab(sensorData = sensorData, supportedCommands = supportedCommands, selectedCategory = selectedCategory, onCategorySelect = { viewModel.selectCategory(it) })
             2 -> LogsTab(logMessages = logMessages)
             3 -> if (!isGuest) {
                 SessionsTab(
-                    sessions = sessionFiles,
-                    isLogging = isLogging,
-                    uploadStatus = uploadStatus,
-                    backendUrl = backendUrl,
-                    pendingRetryCount = pendingRetryCount,
-                    vehicles = vehicles,
-                    isLoggedIn = viewModel.authManager.isLoggedIn,
-                    isLoadingVehicles = isLoadingVehicles,
-                    vehicleError = vehicleError,
-                    onStopLogging = onStopLogging,
-                    onRefresh = onRefreshSessions,
-                    onRetryUploads = onRetryUploads,
-                    onUrlChange = onUrlChange,
-                    onAddVehicleClick = onAddVehicleClick,
-                    onRefreshVehicles = onRefreshVehicles
+                    sessions = sessionFiles, isLogging = isLogging, uploadStatus = uploadStatus,
+                    backendUrl = backendUrl, pendingRetryCount = pendingRetryCount,
+                    vehicles = vehicles, isLoggedIn = viewModel.authManager.isLoggedIn,
+                    isLoadingVehicles = isLoadingVehicles, vehicleError = vehicleError,
+                    onStopLogging = onStopLogging, onRefresh = onRefreshSessions,
+                    onRetryUploads = onRetryUploads, onUrlChange = onUrlChange,
+                    onAddVehicleClick = onAddVehicleClick, onRefreshVehicles = onRefreshVehicles
                 )
             }
         }
@@ -637,21 +481,14 @@ fun PostConnectContent(
 
 @Composable
 fun ObdHeader(
-    connectionState: ObdBluetoothManager.ConnectionState,
-    vinInfo: String,
-    isScanning: Boolean,
-    isLoggedIn: Boolean,
-    userEmail: String?,
-    isGuest: Boolean,
-    onDisconnect: () -> Unit,
-    onToggleScan: () -> Unit,
-    onLogout: () -> Unit
+    connectionState: ObdBluetoothManager.ConnectionState, vinInfo: String, isScanning: Boolean,
+    isLoggedIn: Boolean, userEmail: String?, isGuest: Boolean,
+    onDisconnect: () -> Unit, onToggleScan: () -> Unit, onLogout: () -> Unit
 ) {
     val isConnected = connectionState is ObdBluetoothManager.ConnectionState.Connected
     val deviceName = (connectionState as? ObdBluetoothManager.ConnectionState.Connected)?.deviceName ?: ""
     val cleanVin = vinInfo.filter { it.isLetterOrDigit() }.uppercase()
     val displayVin = if (cleanVin.length in 10..17) cleanVin else ""
-
     var showLogoutConfirm by remember { mutableStateOf(false) }
 
     if (showLogoutConfirm) {
@@ -659,143 +496,44 @@ fun ObdHeader(
             onDismissRequest = { showLogoutConfirm = false },
             containerColor = CardBackground,
             title = { Text("Wyloguj się?", color = TextPrimary, fontWeight = FontWeight.Bold) },
-            text = {
-                Text(
-                    "Sesja zostanie zakończona. Niezapisane dane mogą zostać utracone.",
-                    color = TextSecondary, fontSize = 13.sp
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { showLogoutConfirm = false; onLogout() }) {
-                    Text("Wyloguj", color = AccentRed, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showLogoutConfirm = false }) {
-                    Text("Anuluj", color = TextSecondary)
-                }
-            }
+            text = { Text("Sesja zostanie zakończona. Niezapisane dane mogą zostać utracone.", color = TextSecondary, fontSize = 13.sp) },
+            confirmButton = { TextButton(onClick = { showLogoutConfirm = false; onLogout() }) { Text("Wyloguj", color = AccentRed, fontWeight = FontWeight.Bold) } },
+            dismissButton = { TextButton(onClick = { showLogoutConfirm = false }) { Text("Anuluj", color = TextSecondary) } }
         )
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Brush.verticalGradient(colors = listOf(Color(0xFF0D1B2A), CardBackground)))
-            .padding(horizontal = 16.dp, vertical = 10.dp)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.fillMaxWidth()
-        ) {
+    Box(modifier = Modifier.fillMaxWidth().background(Brush.verticalGradient(colors = listOf(Color(0xFF0D1B2A), CardBackground))).padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "OBD2 Reader",
-                    fontSize = 22.sp, fontWeight = FontWeight.Black,
-                    color = TextPrimary, letterSpacing = 0.5.sp, maxLines = 1
-                )
-                if (isConnected) {
-                    Text(
-                        deviceName, fontSize = 12.sp, color = AccentGreen,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis
-                    )
-                }
-                if (displayVin.isNotBlank()) {
-                    Text(
-                        "VIN: $displayVin", fontSize = 10.sp, color = TextSecondary,
-                        fontFamily = FontFamily.Monospace, maxLines = 1
-                    )
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
+                Text("OBD2 Reader", fontSize = 22.sp, fontWeight = FontWeight.Black, color = TextPrimary, letterSpacing = 0.5.sp, maxLines = 1)
+                if (isConnected) Text(deviceName, fontSize = 12.sp, color = AccentGreen, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (displayVin.isNotBlank()) Text("VIN: $displayVin", fontSize = 10.sp, color = TextSecondary, fontFamily = FontFamily.Monospace, maxLines = 1)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (isGuest) {
-                        Icon(
-                            Icons.Default.PersonOutline, null,
-                            tint = AccentOrange.copy(0.7f), modifier = Modifier.size(10.dp)
-                        )
+                        Icon(Icons.Default.PersonOutline, null, tint = AccentOrange.copy(0.7f), modifier = Modifier.size(10.dp))
                         Text("Tryb gościa", fontSize = 10.sp, color = AccentOrange.copy(0.7f))
                     } else if (isLoggedIn && !userEmail.isNullOrBlank()) {
-                        Icon(
-                            Icons.Default.Person, null,
-                            tint = AccentBlue.copy(0.7f), modifier = Modifier.size(10.dp)
-                        )
-                        Text(
-                            userEmail, fontSize = 10.sp, color = AccentBlue.copy(0.7f),
-                            maxLines = 1, overflow = TextOverflow.Ellipsis
-                        )
+                        Icon(Icons.Default.Person, null, tint = AccentBlue.copy(0.7f), modifier = Modifier.size(10.dp))
+                        Text(userEmail, fontSize = 10.sp, color = AccentBlue.copy(0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.padding(start = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (isConnected) {
-                    IconButton(
-                        onClick = onToggleScan,
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(if (isScanning) AccentGreen.copy(alpha = 0.15f) else Color.Transparent)
-                            .border(1.dp, if (isScanning) AccentGreen else TextSecondary, CircleShape)
-                    ) {
-                        Icon(
-                            if (isScanning) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            null,
-                            tint = if (isScanning) AccentGreen else TextSecondary,
-                            modifier = Modifier.size(18.dp)
-                        )
+                    IconButton(onClick = onToggleScan, modifier = Modifier.size(38.dp).clip(CircleShape).background(if (isScanning) AccentGreen.copy(alpha = 0.15f) else Color.Transparent).border(1.dp, if (isScanning) AccentGreen else TextSecondary, CircleShape)) {
+                        Icon(if (isScanning) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = if (isScanning) AccentGreen else TextSecondary, modifier = Modifier.size(18.dp))
                     }
-                    IconButton(
-                        onClick = onDisconnect,
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .border(1.dp, AccentRed.copy(alpha = 0.5f), CircleShape)
-                    ) {
-                        Icon(
-                            Icons.Default.BluetoothDisabled, null,
-                            tint = AccentRed, modifier = Modifier.size(18.dp)
-                        )
+                    IconButton(onClick = onDisconnect, modifier = Modifier.size(38.dp).clip(CircleShape).border(1.dp, AccentRed.copy(alpha = 0.5f), CircleShape)) {
+                        Icon(Icons.Default.BluetoothDisabled, null, tint = AccentRed, modifier = Modifier.size(18.dp))
                     }
                 }
-
                 IconButton(
                     onClick = { showLogoutConfirm = true },
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .background(
-                            when {
-                                isGuest -> AccentOrange.copy(0.1f)
-                                isLoggedIn -> AccentBlue.copy(0.1f)
-                                else -> Color.Transparent
-                            }
-                        )
-                        .border(
-                            1.dp,
-                            when {
-                                isGuest -> AccentOrange.copy(0.4f)
-                                isLoggedIn -> AccentBlue.copy(0.4f)
-                                else -> TextSecondary.copy(0.3f)
-                            },
-                            CircleShape
-                        )
+                    modifier = Modifier.size(38.dp).clip(CircleShape)
+                        .background(when { isGuest -> AccentOrange.copy(0.1f); isLoggedIn -> AccentBlue.copy(0.1f); else -> Color.Transparent })
+                        .border(1.dp, when { isGuest -> AccentOrange.copy(0.4f); isLoggedIn -> AccentBlue.copy(0.4f); else -> TextSecondary.copy(0.3f) }, CircleShape)
                 ) {
-                    Icon(
-                        Icons.Default.Logout, null,
-                        tint = when {
-                            isGuest -> AccentOrange
-                            isLoggedIn -> AccentBlue
-                            else -> TextSecondary
-                        },
-                        modifier = Modifier.size(16.dp)
-                    )
+                    Icon(Icons.Default.Logout, null, tint = when { isGuest -> AccentOrange; isLoggedIn -> AccentBlue; else -> TextSecondary }, modifier = Modifier.size(16.dp))
                 }
             }
         }
@@ -805,109 +543,48 @@ fun ObdHeader(
 // ─── Ekran parowania ──────────────────────────────────────────────────────────
 
 @Composable
-fun DeviceSelectionScreen(
-    onConnect: (BluetoothDevice) -> Unit,
-    errorBanner: String? = null
-) {
+fun DeviceSelectionScreen(onConnect: (BluetoothDevice) -> Unit, errorBanner: String? = null) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val hasPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+        ActivityCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+    else ActivityCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH) == PackageManager.PERMISSION_GRANTED
 
-    val hasPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        ActivityCompat.checkSelfPermission(
-            context, Manifest.permission.BLUETOOTH_CONNECT
-        ) == PackageManager.PERMISSION_GRANTED
-    } else {
-        ActivityCompat.checkSelfPermission(
-            context, Manifest.permission.BLUETOOTH
-        ) == PackageManager.PERMISSION_GRANTED
-    }
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(contract = ActivityResultContracts.RequestPermission()) { }
 
-    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { }
-
-    if (!hasPermission) {
-        LaunchedEffect(Unit) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                permissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
-            }
-        }
-    }
+    if (!hasPermission) LaunchedEffect(Unit) { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) permissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT) }
 
     val pairedDevices = remember(hasPermission) {
         if (!hasPermission) return@remember emptyList()
-        try {
-            BluetoothAdapter.getDefaultAdapter()?.bondedDevices?.toList() ?: emptyList()
-        } catch (e: SecurityException) { emptyList() }
+        try { BluetoothAdapter.getDefaultAdapter()?.bondedDevices?.toList() ?: emptyList() } catch (e: SecurityException) { emptyList() }
     }
     val obdDevices = pairedDevices.filter { device ->
-        try {
-            val name = device.name?.lowercase() ?: ""
-            name.contains("obd") || name.contains("elm") || name.contains("vlink") ||
-                    name.contains("icar") || name.contains("obdii") || name.contains("v-link")
-        } catch (e: SecurityException) { false }
+        try { val name = device.name?.lowercase() ?: ""; name.contains("obd") || name.contains("elm") || name.contains("vlink") || name.contains("icar") || name.contains("obdii") || name.contains("v-link") }
+        catch (e: SecurityException) { false }
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                "Połącz z kostką OBD2",
-                fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary
-            )
-            Text(
-                "Sparuj kostkę OBD2 w ustawieniach Bluetooth, potem wróć tutaj",
-                fontSize = 13.sp, color = TextSecondary, modifier = Modifier.padding(top = 4.dp)
-            )
+            Text("Połącz z kostką OBD2", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Text("Sparuj kostkę OBD2 w ustawieniach Bluetooth, potem wróć tutaj", fontSize = 13.sp, color = TextSecondary, modifier = Modifier.padding(top = 4.dp))
         }
-
         if (errorBanner != null) {
             item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(AccentRed.copy(0.1f))
-                        .border(1.dp, AccentRed.copy(0.4f), RoundedCornerShape(10.dp))
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                Row(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(AccentRed.copy(0.1f)).border(1.dp, AccentRed.copy(0.4f), RoundedCornerShape(10.dp)).padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(Icons.Default.ErrorOutline, null, tint = AccentRed, modifier = Modifier.size(18.dp))
                     Text(errorBanner, fontSize = 13.sp, color = AccentRed)
                 }
             }
         }
-
         if (obdDevices.isNotEmpty()) {
-            item {
-                Text(
-                    "WYKRYTE KOSTKI OBD",
-                    fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AccentGreen,
-                    letterSpacing = 1.5.sp, modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-            items(obdDevices) { device ->
-                DeviceCard(device = device, isObd = true, onConnect = onConnect)
-            }
+            item { Text("WYKRYTE KOSTKI OBD", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AccentGreen, letterSpacing = 1.5.sp, modifier = Modifier.padding(top = 8.dp)) }
+            items(obdDevices) { device -> DeviceCard(device = device, isObd = true, onConnect = onConnect) }
         }
-
         val otherDevices = pairedDevices - obdDevices.toSet()
         if (otherDevices.isNotEmpty()) {
-            item {
-                Text(
-                    "INNE SPAROWANE URZĄDZENIA",
-                    fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextSecondary,
-                    letterSpacing = 1.5.sp, modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-            items(otherDevices) { device ->
-                DeviceCard(device = device, isObd = false, onConnect = onConnect)
-            }
+            item { Text("INNE SPAROWANE URZĄDZENIA", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextSecondary, letterSpacing = 1.5.sp, modifier = Modifier.padding(top = 8.dp)) }
+            items(otherDevices) { device -> DeviceCard(device = device, isObd = false, onConnect = onConnect) }
         }
-
         if (!hasPermission) {
             item {
                 Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
@@ -917,13 +594,7 @@ fun DeviceSelectionScreen(
                         Text("Brak uprawnienia Bluetooth", color = TextPrimary, fontWeight = FontWeight.Bold)
                         Text("Aplikacja potrzebuje dostępu do Bluetooth.", color = TextSecondary, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
                         Spacer(Modifier.height(16.dp))
-                        Button(
-                            onClick = {
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
-                                    permissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
-                        ) {
+                        Button(onClick = { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) permissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT) }, colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)) {
                             Text("Przyznaj uprawnienie", color = Color.Black, fontWeight = FontWeight.Bold)
                         }
                     }
@@ -946,14 +617,9 @@ fun DeviceSelectionScreen(
 
 @Composable
 fun DeviceCard(device: BluetoothDevice, isObd: Boolean, onConnect: (BluetoothDevice) -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable { onConnect(device) },
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isObd) AccentGreen.copy(alpha = 0.08f) else CardBackground
-        ),
-        border = if (isObd) BorderStroke(1.dp, AccentGreen.copy(alpha = 0.4f)) else null
-    ) {
+    Card(modifier = Modifier.fillMaxWidth().clickable { onConnect(device) }, shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = if (isObd) AccentGreen.copy(alpha = 0.08f) else CardBackground),
+        border = if (isObd) BorderStroke(1.dp, AccentGreen.copy(alpha = 0.4f)) else null) {
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.Bluetooth, null, tint = if (isObd) AccentGreen else AccentBlue, modifier = Modifier.size(24.dp))
             Spacer(Modifier.width(12.dp))
@@ -961,13 +627,7 @@ fun DeviceCard(device: BluetoothDevice, isObd: Boolean, onConnect: (BluetoothDev
                 Text(device.name ?: "Nieznane urządzenie", fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Text(device.address, fontSize = 12.sp, color = TextSecondary, fontFamily = FontFamily.Monospace)
             }
-            if (isObd) {
-                Text(
-                    "OBD", fontSize = 11.sp, color = AccentGreen, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.background(AccentGreen.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
-                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                )
-            }
+            if (isObd) Text("OBD", fontSize = 11.sp, color = AccentGreen, fontWeight = FontWeight.Bold, modifier = Modifier.background(AccentGreen.copy(alpha = 0.15f), RoundedCornerShape(4.dp)).padding(horizontal = 8.dp, vertical = 3.dp))
             Spacer(Modifier.width(8.dp))
             Icon(Icons.Default.ChevronRight, null, tint = TextSecondary)
         }
@@ -991,21 +651,14 @@ fun ConnectingScreen(message: String) {
 
 @Composable
 fun DashboardTab(sensorData: Map<ObdCommand, ObdResponseParser.ParsedValue>) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(top = 12.dp, bottom = 16.dp)
-    ) {
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(top = 12.dp, bottom = 16.dp)) {
         item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 BigMetricCard(ObdCommand.ENGINE_RPM, sensorData[ObdCommand.ENGINE_RPM], Modifier.weight(1f), AccentGreen)
                 BigMetricCard(ObdCommand.VEHICLE_SPEED, sensorData[ObdCommand.VEHICLE_SPEED], Modifier.weight(1f), AccentBlue)
             }
         }
-        val secondaryMetrics = listOf(
-            ObdCommand.COOLANT_TEMP, ObdCommand.FUEL_LEVEL,
-            ObdCommand.ENGINE_LOAD, ObdCommand.INTAKE_TEMP
-        )
+        val secondaryMetrics = listOf(ObdCommand.COOLANT_TEMP, ObdCommand.FUEL_LEVEL, ObdCommand.ENGINE_LOAD, ObdCommand.INTAKE_TEMP)
         secondaryMetrics.chunked(2).forEach { pair ->
             item {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1015,43 +668,19 @@ fun DashboardTab(sensorData: Map<ObdCommand, ObdResponseParser.ParsedValue>) {
             }
         }
         val statusParsed = sensorData[ObdCommand.STATUS]
-        if (statusParsed != null) {
-            item { StatusCard(statusParsed) }
-        }
+        if (statusParsed != null) item { StatusCard(statusParsed) }
     }
 }
 
 @Composable
-fun BigMetricCard(
-    command: ObdCommand,
-    parsed: ObdResponseParser.ParsedValue?,
-    modifier: Modifier = Modifier,
-    accentColor: Color = AccentGreen
-) {
+fun BigMetricCard(command: ObdCommand, parsed: ObdResponseParser.ParsedValue?, modifier: Modifier = Modifier, accentColor: Color = AccentGreen) {
     val hasValue = parsed != null && parsed.displayValue != "--" && parsed.displayValue != "Brak danych"
-    Card(
-        modifier = modifier.height(130.dp),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBackground),
-        border = BorderStroke(1.dp, accentColor.copy(alpha = if (hasValue) 0.35f else 0.12f))
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Brush.verticalGradient(
-                    listOf(accentColor.copy(alpha = if (hasValue) 0.08f else 0.02f), Color.Transparent)
-                ))
-                .padding(14.dp)
-        ) {
+    Card(modifier = modifier.height(130.dp), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = CardBackground), border = BorderStroke(1.dp, accentColor.copy(alpha = if (hasValue) 0.35f else 0.12f))) {
+        Box(modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(accentColor.copy(alpha = if (hasValue) 0.08f else 0.02f), Color.Transparent))).padding(14.dp)) {
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
                 Text(command.cmdName.uppercase(), fontSize = 11.sp, color = accentColor, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1)
                 Column {
-                    Text(
-                        if (hasValue) parsed!!.displayValue else "--",
-                        fontSize = 38.sp, fontWeight = FontWeight.Black,
-                        color = if (hasValue) TextPrimary else TextSecondary,
-                        lineHeight = 38.sp, maxLines = 1, softWrap = false
-                    )
+                    Text(if (hasValue) parsed!!.displayValue else "--", fontSize = 38.sp, fontWeight = FontWeight.Black, color = if (hasValue) TextPrimary else TextSecondary, lineHeight = 38.sp, maxLines = 1, softWrap = false)
                     Text(command.unit, fontSize = 12.sp, color = accentColor.copy(alpha = 0.8f), fontWeight = FontWeight.Medium)
                 }
             }
@@ -1061,20 +690,14 @@ fun BigMetricCard(
 
 @Composable
 fun SmallMetricCard(command: ObdCommand, parsed: ObdResponseParser.ParsedValue?, modifier: Modifier = Modifier) {
-    val accentColor = when (command) {
-        ObdCommand.FUEL_LEVEL -> AccentBlue
-        ObdCommand.CONTROL_MODULE_VOLTAGE -> Color(0xFFFFD700)
-        else -> TextSecondary
-    }
+    val accentColor = when (command) { ObdCommand.FUEL_LEVEL -> AccentBlue; ObdCommand.CONTROL_MODULE_VOLTAGE -> Color(0xFFFFD700); else -> TextSecondary }
     val hasValue = parsed != null && parsed.displayValue != "--" && parsed.displayValue != "Brak danych"
     Card(modifier = modifier.height(86.dp), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = CardBackground)) {
         Column(modifier = Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.SpaceBetween) {
             Text(command.cmdName, fontSize = 11.sp, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(if (hasValue) parsed!!.displayValue else "--", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = if (hasValue) TextPrimary else TextSecondary, maxLines = 1, softWrap = false)
-                if (command.unit.isNotBlank() && command.unit != "-") {
-                    Text(command.unit, fontSize = 11.sp, color = accentColor, modifier = Modifier.padding(bottom = 3.dp))
-                }
+                if (command.unit.isNotBlank() && command.unit != "-") Text(command.unit, fontSize = 11.sp, color = accentColor, modifier = Modifier.padding(bottom = 3.dp))
             }
         }
     }
@@ -1083,9 +706,7 @@ fun SmallMetricCard(command: ObdCommand, parsed: ObdResponseParser.ParsedValue?,
 @Composable
 fun StatusCard(parsed: ObdResponseParser.ParsedValue) {
     val isMilOn = parsed.displayValue.contains("MIL ON")
-    val bg = if (isMilOn) AccentRed.copy(alpha = 0.12f) else AccentGreen.copy(alpha = 0.07f)
-    val border = if (isMilOn) AccentRed.copy(alpha = 0.5f) else AccentGreen.copy(alpha = 0.3f)
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = bg), border = BorderStroke(1.dp, border)) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = if (isMilOn) AccentRed.copy(alpha = 0.12f) else AccentGreen.copy(alpha = 0.07f)), border = BorderStroke(1.dp, if (isMilOn) AccentRed.copy(alpha = 0.5f) else AccentGreen.copy(alpha = 0.3f))) {
         Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(if (isMilOn) Icons.Default.Warning else Icons.Default.CheckCircle, null, tint = if (isMilOn) AccentRed else AccentGreen, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(10.dp))
@@ -1100,42 +721,23 @@ fun StatusCard(parsed: ObdResponseParser.ParsedValue) {
 // ─── Sensors Tab ──────────────────────────────────────────────────────────────
 
 @Composable
-fun SensorsTab(
-    sensorData: Map<ObdCommand, ObdResponseParser.ParsedValue>,
-    supportedCommands: List<ObdCommand>,
-    selectedCategory: ObdCategory?,
-    onCategorySelect: (ObdCategory?) -> Unit
-) {
+fun SensorsTab(sensorData: Map<ObdCommand, ObdResponseParser.ParsedValue>, supportedCommands: List<ObdCommand>, selectedCategory: ObdCategory?, onCategorySelect: (ObdCategory?) -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
         LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             item { CategoryChip(label = "Wszystkie", selected = selectedCategory == null, onClick = { onCategorySelect(null) }) }
-            items(ObdCategory.values().toList()) { category ->
-                CategoryChip(label = category.displayName, selected = selectedCategory == category, onClick = { onCategorySelect(category) })
-            }
+            items(ObdCategory.values().toList()) { category -> CategoryChip(label = category.displayName, selected = selectedCategory == category, onClick = { onCategorySelect(category) }) }
         }
-        val displayCommands = if (selectedCategory != null) {
-            supportedCommands.filter { it in selectedCategory.pids }.ifEmpty { selectedCategory.pids }
-        } else {
-            supportedCommands.ifEmpty { ObdCommand.values().toList() }
-        }
+        val displayCommands = if (selectedCategory != null) supportedCommands.filter { it in selectedCategory.pids }.ifEmpty { selectedCategory.pids }
+        else supportedCommands.ifEmpty { ObdCommand.values().toList() }
         LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(displayCommands, key = { it.cmdName }) { cmd ->
-                SensorRow(command = cmd, parsed = sensorData[cmd], isSupported = cmd in supportedCommands)
-            }
+            items(displayCommands, key = { it.cmdName }) { cmd -> SensorRow(command = cmd, parsed = sensorData[cmd], isSupported = cmd in supportedCommands) }
         }
     }
 }
 
 @Composable
 fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(if (selected) AccentGreen.copy(alpha = 0.2f) else CardBackground)
-            .border(1.dp, if (selected) AccentGreen else TextSecondary.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 7.dp)
-    ) {
+    Box(modifier = Modifier.clip(RoundedCornerShape(20.dp)).background(if (selected) AccentGreen.copy(alpha = 0.2f) else CardBackground).border(1.dp, if (selected) AccentGreen else TextSecondary.copy(alpha = 0.3f), RoundedCornerShape(20.dp)).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 7.dp)) {
         Text(label, fontSize = 13.sp, color = if (selected) AccentGreen else TextSecondary, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
     }
 }
@@ -1150,18 +752,9 @@ fun SensorRow(command: ObdCommand, parsed: ObdResponseParser.ParsedValue?, isSup
             }
             Spacer(Modifier.width(12.dp))
             Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    parsed?.displayValue ?: if (isSupported) "..." else "N/A",
-                    fontSize = 16.sp, fontWeight = FontWeight.Bold,
-                    color = when {
-                        parsed == null -> TextSecondary
-                        parsed.displayValue == "Brak danych" -> TextSecondary
-                        else -> AccentGreen
-                    }
-                )
-                if (command.unit.isNotBlank() && command.unit != "-") {
-                    Text(command.unit, fontSize = 11.sp, color = TextSecondary)
-                }
+                Text(parsed?.displayValue ?: if (isSupported) "..." else "N/A", fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                    color = when { parsed == null -> TextSecondary; parsed.displayValue == "Brak danych" -> TextSecondary; else -> AccentGreen })
+                if (command.unit.isNotBlank() && command.unit != "-") Text(command.unit, fontSize = 11.sp, color = TextSecondary)
             }
         }
     }
@@ -1172,52 +765,29 @@ fun SensorRow(command: ObdCommand, parsed: ObdResponseParser.ParsedValue?, isSup
 @Composable
 fun LogsTab(logMessages: List<String>) {
     LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp), contentPadding = PaddingValues(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (logMessages.isEmpty()) {
-            item { Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { Text("Brak wpisów w logu", color = TextSecondary) } }
-        }
+        if (logMessages.isEmpty()) item { Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { Text("Brak wpisów w logu", color = TextSecondary) } }
         items(logMessages) { msg ->
-            Text(
-                msg, fontSize = 12.sp,
-                color = when {
-                    msg.contains("Błąd") || msg.contains("Nie udało") -> AccentRed
-                    msg.contains("Połączono") || msg.contains("SUKCES") -> AccentGreen
-                    msg.contains("Skanowanie") -> AccentBlue
-                    else -> TextSecondary
-                },
-                fontFamily = FontFamily.Monospace, modifier = Modifier.fillMaxWidth()
-            )
+            Text(msg, fontSize = 12.sp,
+                color = when { msg.contains("Błąd") || msg.contains("Nie udało") -> AccentRed; msg.contains("Połączono") || msg.contains("SUKCES") -> AccentGreen; msg.contains("Skanowanie") -> AccentBlue; else -> TextSecondary },
+                fontFamily = FontFamily.Monospace, modifier = Modifier.fillMaxWidth())
         }
     }
 }
 
 fun Modifier.tabIndicatorOffset(currentTabPosition: TabPosition): Modifier {
-    return this.then(
-        Modifier
-            .wrapContentSize(align = Alignment.BottomStart)
-            .offset(x = currentTabPosition.left)
-            .width(currentTabPosition.width)
-    )
+    return this.then(Modifier.wrapContentSize(align = Alignment.BottomStart).offset(x = currentTabPosition.left).width(currentTabPosition.width))
 }
 
 // ─── Sessions Tab ─────────────────────────────────────────────────────────────
 
 @Composable
 fun SessionsTab(
-    sessions: List<com.obdreader.app.obd.ObdDataLogger.SessionInfo>,
-    isLogging: Boolean,
-    uploadStatus: TelemetryUploader.UploadStatus,
-    backendUrl: String,
-    pendingRetryCount: Int,
-    vehicles: List<com.obdreader.app.auth.AuthManager.Vehicle>,
-    isLoggedIn: Boolean,
-    isLoadingVehicles: Boolean,
-    vehicleError: String?,
-    onStopLogging: () -> Unit,
-    onRefresh: () -> Unit,
-    onRetryUploads: () -> Unit,
-    onUrlChange: (String) -> Unit,
-    onAddVehicleClick: () -> Unit,
-    onRefreshVehicles: () -> Unit
+    sessions: List<com.obdreader.app.obd.ObdDataLogger.SessionInfo>, isLogging: Boolean,
+    uploadStatus: TelemetryUploader.UploadStatus, backendUrl: String, pendingRetryCount: Int,
+    vehicles: List<com.obdreader.app.auth.AuthManager.Vehicle>, isLoggedIn: Boolean,
+    isLoadingVehicles: Boolean, vehicleError: String?,
+    onStopLogging: () -> Unit, onRefresh: () -> Unit, onRetryUploads: () -> Unit,
+    onUrlChange: (String) -> Unit, onAddVehicleClick: () -> Unit, onRefreshVehicles: () -> Unit
 ) {
     LaunchedEffect(Unit) { onRefresh() }
     var showUrlDialog by remember { mutableStateOf(false) }
@@ -1225,19 +795,16 @@ fun SessionsTab(
 
     if (showUrlDialog) {
         AlertDialog(
-            onDismissRequest = { showUrlDialog = false },
-            containerColor = CardBackground,
+            onDismissRequest = { showUrlDialog = false }, containerColor = CardBackground,
             title = { Text("URL backendu", color = TextPrimary, fontWeight = FontWeight.Bold) },
             text = {
                 Column {
                     Text("Adres endpointu POST:", fontSize = 12.sp, color = TextSecondary)
                     Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = urlInput, onValueChange = { urlInput = it }, singleLine = true,
+                    OutlinedTextField(value = urlInput, onValueChange = { urlInput = it }, singleLine = true,
                         textStyle = androidx.compose.ui.text.TextStyle(color = TextPrimary, fontSize = 13.sp, fontFamily = FontFamily.Monospace),
                         colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = AccentGreen, unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f)),
-                        placeholder = { Text("https://api.example.com/api/...", fontSize = 12.sp) }
-                    )
+                        placeholder = { Text("https://api.example.com/api/...", fontSize = 12.sp) })
                 }
             },
             confirmButton = { TextButton(onClick = { onUrlChange(urlInput); showUrlDialog = false }) { Text("Zapisz", color = AccentGreen, fontWeight = FontWeight.Bold) } },
@@ -1245,12 +812,7 @@ fun SessionsTab(
         )
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-        contentPadding = PaddingValues(vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        // Status uploadu
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp), contentPadding = PaddingValues(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             val (uploadColor, uploadText, uploadSub) = when (val s = uploadStatus) {
                 is TelemetryUploader.UploadStatus.IDLE -> Triple(TextSecondary, "Oczekiwanie", "Nie wysłano jeszcze danych")
@@ -1258,18 +820,9 @@ fun SessionsTab(
                 is TelemetryUploader.UploadStatus.SUCCESS -> Triple(AccentGreen, "✓ Wysłano ${s.recordsSent} rekordów", s.timestamp.take(19).replace("T", " "))
                 is TelemetryUploader.UploadStatus.FAILED -> Triple(AccentRed, "✗ Błąd: ${s.error}", if (s.willRetry) "Zapisano do retry" else "")
             }
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = uploadColor.copy(alpha = 0.08f)),
-                border = BorderStroke(1.dp, uploadColor.copy(alpha = 0.4f))
-            ) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = uploadColor.copy(alpha = 0.08f)), border = BorderStroke(1.dp, uploadColor.copy(alpha = 0.4f))) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                         Column(Modifier.weight(1f)) {
                             Text("STATUS UPLOADU", fontSize = 10.sp, color = TextSecondary, letterSpacing = 1.sp)
                             Text(uploadText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = uploadColor)
@@ -1278,28 +831,16 @@ fun SessionsTab(
                         if (pendingRetryCount > 0) {
                             Column(horizontalAlignment = Alignment.End) {
                                 Text("$pendingRetryCount do retry", fontSize = 11.sp, color = AccentOrange)
-                                TextButton(onClick = onRetryUploads) {
-                                    Text("Wyślij teraz", color = AccentOrange, fontSize = 12.sp)
-                                }
+                                TextButton(onClick = onRetryUploads) { Text("Wyślij teraz", color = AccentOrange, fontSize = 12.sp) }
                             }
                         }
                     }
                 }
             }
         }
-
-        // Endpoint backendu
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth().clickable { showUrlDialog = true },
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = CardBackground)
-            ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+            Card(modifier = Modifier.fillMaxWidth().clickable { showUrlDialog = true }, shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = CardBackground)) {
+                Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                     Column(Modifier.weight(1f)) {
                         Text("ENDPOINT BACKENDU", fontSize = 10.sp, color = TextSecondary, letterSpacing = 1.sp)
                         Text(backendUrl, fontSize = 12.sp, color = AccentBlue, fontFamily = FontFamily.Monospace, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -1308,106 +849,41 @@ fun SessionsTab(
                 }
             }
         }
-
-        // Status logowania
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isLogging) AccentGreen.copy(alpha = 0.08f) else CardBackground
-                ),
-                border = BorderStroke(1.dp, if (isLogging) AccentGreen.copy(0.4f) else TextSecondary.copy(0.15f))
-            ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = if (isLogging) AccentGreen.copy(alpha = 0.08f) else CardBackground),
+                border = BorderStroke(1.dp, if (isLogging) AccentGreen.copy(0.4f) else TextSecondary.copy(0.15f))) {
+                Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(8.dp).clip(CircleShape).background(if (isLogging) AccentGreen else TextSecondary))
                         Spacer(Modifier.width(10.dp))
                         Column {
-                            Text(
-                                if (isLogging) "Logowanie aktywne" else "Logowanie nieaktywne",
-                                fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
-                                color = if (isLogging) AccentGreen else TextSecondary
-                            )
-                            Text(
-                                "Dane zapisywane do JSON + wysyłane na backend",
-                                fontSize = 11.sp, color = TextSecondary
-                            )
+                            Text(if (isLogging) "Logowanie aktywne" else "Logowanie nieaktywne", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = if (isLogging) AccentGreen else TextSecondary)
+                            Text("Dane zapisywane do JSON + wysyłane na backend", fontSize = 11.sp, color = TextSecondary)
                         }
                     }
-                    if (isLogging) {
-                        TextButton(onClick = onStopLogging) {
-                            Text("Zatrzymaj", color = AccentRed, fontSize = 13.sp)
-                        }
-                    }
+                    if (isLogging) TextButton(onClick = onStopLogging) { Text("Zatrzymaj", color = AccentRed, fontSize = 13.sp) }
                 }
             }
         }
-
-        // Pojazdy
         item {
-            VehiclesSection(
-                vehicles = vehicles,
-                isLoggedIn = isLoggedIn,
-                isLoadingVehicles = isLoadingVehicles,
-                vehicleError = vehicleError,
-                onAddVehicleClick = onAddVehicleClick,
-                onRefresh = onRefreshVehicles
-            )
+            VehiclesSection(vehicles = vehicles, isLoggedIn = isLoggedIn, isLoadingVehicles = isLoadingVehicles, vehicleError = vehicleError, onAddVehicleClick = onAddVehicleClick, onRefresh = onRefreshVehicles)
         }
-
-        // Lista sesji
-        item {
-            Text(
-                "ZAPISANE SESJE (${sessions.size})",
-                fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextSecondary,
-                letterSpacing = 1.5.sp, modifier = Modifier.padding(top = 4.dp)
-            )
-        }
-
-        if (sessions.isEmpty()) {
-            item {
-                Box(
-                    modifier = Modifier.fillMaxWidth().padding(24.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("Brak zapisanych sesji", color = TextSecondary)
-                }
-            }
-        }
-
+        item { Text("ZAPISANE SESJE (${sessions.size})", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextSecondary, letterSpacing = 1.5.sp, modifier = Modifier.padding(top = 4.dp)) }
+        if (sessions.isEmpty()) item { Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { Text("Brak zapisanych sesji", color = TextSecondary) } }
         items(sessions) { session ->
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
-                colors = CardDefaults.cardColors(containerColor = CardBackground)
-            ) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp), colors = CardDefaults.cardColors(containerColor = CardBackground)) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text(session.sessionId, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary, fontFamily = FontFamily.Monospace)
                         Text("${session.sizeKb} KB", fontSize = 12.sp, color = AccentBlue)
                     }
                     Spacer(Modifier.height(4.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("${session.recordCount} rek.", fontSize = 11.sp, color = TextSecondary)
-                        if (session.vin.isNotBlank()) {
-                            Text("VIN: ${session.vin.take(17)}", fontSize = 11.sp, color = TextSecondary, fontFamily = FontFamily.Monospace)
-                        }
+                        if (session.vin.isNotBlank()) Text("VIN: ${session.vin.take(17)}", fontSize = 11.sp, color = TextSecondary, fontFamily = FontFamily.Monospace)
                     }
-                    Text(
-                        session.file.absolutePath,
-                        fontSize = 10.sp, color = TextSecondary.copy(alpha = 0.4f),
-                        modifier = Modifier.padding(top = 2.dp),
-                        maxLines = 1, overflow = TextOverflow.Ellipsis
-                    )
+                    Text(session.file.absolutePath, fontSize = 10.sp, color = TextSecondary.copy(alpha = 0.4f), modifier = Modifier.padding(top = 2.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
