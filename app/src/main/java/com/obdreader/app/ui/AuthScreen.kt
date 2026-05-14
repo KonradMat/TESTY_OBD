@@ -100,7 +100,7 @@ fun AuthScreen(
             Spacer(Modifier.height(16.dp))
 
             Text(
-                "OBD2 Reader",
+                "OBDamy",
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Black,
                 color = TextPrimary,

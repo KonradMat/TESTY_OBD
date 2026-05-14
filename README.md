@@ -1,4 +1,4 @@
-# OBD2 Reader - Aplikacja Android (Kotlin + Jetpack Compose)
+# OBDamy - Aplikacja Android (Kotlin + Jetpack Compose)
 
 Aplikacja Android do odczytu danych z kostki OBD2 przez Bluetooth.
 Odpowiednik Twojego projektu Python (`ObdConnection`), przepisany natywnie na Android.

@@ -505,7 +505,7 @@ fun ObdHeader(
     Box(modifier = Modifier.fillMaxWidth().background(Brush.verticalGradient(colors = listOf(Color(0xFF0D1B2A), CardBackground))).padding(horizontal = 16.dp, vertical = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("OBD2 Reader", fontSize = 22.sp, fontWeight = FontWeight.Black, color = TextPrimary, letterSpacing = 0.5.sp, maxLines = 1)
+                Text("OBDamy", fontSize = 22.sp, fontWeight = FontWeight.Black, color = TextPrimary, letterSpacing = 0.5.sp, maxLines = 1)
                 if (isConnected) Text(deviceName, fontSize = 12.sp, color = AccentGreen, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (displayVin.isNotBlank()) Text("VIN: $displayVin", fontSize = 10.sp, color = TextSecondary, fontFamily = FontFamily.Monospace, maxLines = 1)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {

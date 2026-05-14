@@ -28,7 +28,9 @@
 
     <application
         android:allowBackup="true"
-        android:label="OBD2 Reader"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="OBDamy"
         android:supportsRtl="true"
         android:theme="@style/Theme.OBDReader"
         android:usesCleartextTraffic="true">
