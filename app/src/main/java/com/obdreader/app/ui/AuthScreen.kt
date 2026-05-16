@@ -27,8 +27,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// ─── Ekran Auth (Login / Rejestracja) ─────────────────────────────────────────
-
 @Composable
 fun AuthScreen(
     isLoading: Boolean,
@@ -39,7 +37,6 @@ fun AuthScreen(
 ) {
     var isRegisterMode by remember { mutableStateOf(false) }
 
-    // Pola formularza
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordConfirm by remember { mutableStateOf("") }
@@ -47,14 +44,12 @@ fun AuthScreen(
     var lastName by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
 
-    // Walidacja
     var emailError by remember { mutableStateOf<String?>(null) }
     var passwordError by remember { mutableStateOf<String?>(null) }
     var nameError by remember { mutableStateOf<String?>(null) }
 
     val focusManager = LocalFocusManager.current
 
-    // Reset błędów przy zmianie trybu
     LaunchedEffect(isRegisterMode) {
         emailError = null; passwordError = null; nameError = null
         passwordConfirm = ""
@@ -78,7 +73,6 @@ fun AuthScreen(
         ) {
             Spacer(Modifier.height(56.dp))
 
-            // ── Logo / tytuł ──────────────────────────────────────────────────
             Box(
                 modifier = Modifier
                     .size(72.dp)
@@ -115,7 +109,6 @@ fun AuthScreen(
 
             Spacer(Modifier.height(36.dp))
 
-            // ── Przełącznik Login / Rejestracja ───────────────────────────────
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -154,7 +147,6 @@ fun AuthScreen(
 
             Spacer(Modifier.height(20.dp))
 
-            // ── Formularz ─────────────────────────────────────────────────────
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -165,7 +157,6 @@ fun AuthScreen(
                     modifier = Modifier.padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    // Imię + Nazwisko (tylko rejestracja)
                     AnimatedVisibility(
                         visible = isRegisterMode,
                         enter = fadeIn() + expandVertically(),
@@ -194,7 +185,6 @@ fun AuthScreen(
                         }
                     }
 
-                    // Email
                     AuthTextField(
                         value = email,
                         onValueChange = { email = it; emailError = null },
@@ -208,7 +198,6 @@ fun AuthScreen(
                         onNext = { focusManager.moveFocus(FocusDirection.Down) }
                     )
 
-                    // Hasło
                     AuthTextField(
                         value = password,
                         onValueChange = { password = it; passwordError = null },
@@ -240,7 +229,6 @@ fun AuthScreen(
                         }
                     )
 
-                    // Potwierdź hasło (tylko rejestracja)
                     AnimatedVisibility(
                         visible = isRegisterMode,
                         enter = fadeIn() + expandVertically(),
@@ -261,7 +249,6 @@ fun AuthScreen(
                         )
                     }
 
-                    // Błąd z serwera
                     if (errorMessage != null) {
                         Row(
                             modifier = Modifier
@@ -278,7 +265,6 @@ fun AuthScreen(
                         }
                     }
 
-                    // Przycisk główny
                     Button(
                         onClick = {
                             focusManager.clearFocus()
@@ -326,7 +312,6 @@ fun AuthScreen(
 
             Spacer(Modifier.height(16.dp))
 
-            // ── Separator ─────────────────────────────────────────────────────
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
@@ -342,7 +327,6 @@ fun AuthScreen(
 
             Spacer(Modifier.height(16.dp))
 
-            // ── Przycisk gościa ────────────────────────────────────────────────
             OutlinedButton(
                 onClick = onGuestContinue,
                 modifier = Modifier
@@ -371,8 +355,6 @@ fun AuthScreen(
         }
     }
 }
-
-// ─── Reużywalny TextField ──────────────────────────────────────────────────────
 
 @Composable
 fun AuthTextField(
@@ -432,8 +414,6 @@ fun AuthTextField(
         }
     }
 }
-
-// ─── Walidacja ────────────────────────────────────────────────────────────────
 
 private fun validateLogin(email: String, password: String): String? {
     if (email.isBlank()) return "Podaj email"

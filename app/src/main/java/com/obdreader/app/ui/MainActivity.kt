@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.sp
 import com.obdreader.app.bluetooth.ObdBluetoothManager
 import com.obdreader.app.obd.ObdCategory
 import com.obdreader.app.obd.ObdCommand
+import com.obdreader.app.obd.ReadPriority
 import com.obdreader.app.obd.ObdResponseParser
 import com.obdreader.app.obd.TelemetryUploader
 import com.obdreader.app.viewmodel.ObdViewModel
@@ -86,8 +87,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// ─── Korzeń aplikacji ─────────────────────────────────────────────────────────
-
 @Composable
 fun AppRoot(viewModel: ObdViewModel) {
     val authPassed by viewModel.authPassed.collectAsState()
@@ -130,8 +129,6 @@ fun AppRoot(viewModel: ObdViewModel) {
     }
 }
 
-// ─── Motyw ────────────────────────────────────────────────────────────────────
-
 val DarkBackground = Color(0xFF0A0E1A)
 val CardBackground = Color(0xFF111827)
 val AccentGreen = Color(0xFF00FF88)
@@ -151,8 +148,6 @@ fun ObdAppTheme(content: @Composable () -> Unit) {
         content = content
     )
 }
-
-// ─── Główny ekran aplikacji ───────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -180,7 +175,6 @@ fun ObdMainScreen(viewModel: ObdViewModel, isGuest: Boolean, onConnectRequest: (
     val vehicleToDelete by viewModel.vehicleToDelete.collectAsState()
     val isDeletingVehicle by viewModel.isDeletingVehicle.collectAsState()
 
-    // Edycja
     val vehicleToEdit by viewModel.vehicleToEdit.collectAsState()
     val isEditingVehicle by viewModel.isEditingVehicle.collectAsState()
     val editVehicleError by viewModel.editVehicleError.collectAsState()
@@ -224,7 +218,6 @@ fun ObdMainScreen(viewModel: ObdViewModel, isGuest: Boolean, onConnectRequest: (
                             showAddDialog = showAddDialog,
                             vehicleToDelete = vehicleToDelete,
                             isDeletingVehicle = isDeletingVehicle,
-                            // Edycja
                             vehicleToEdit = vehicleToEdit,
                             isEditingVehicle = isEditingVehicle,
                             editVehicleError = editVehicleError,
@@ -294,8 +287,6 @@ fun ObdMainScreen(viewModel: ObdViewModel, isGuest: Boolean, onConnectRequest: (
     }
 }
 
-// ─── Ekran przed połączeniem dla gościa ──────────────────────────────────────
-
 @Composable
 fun GuestPreConnectScreen(connectionState: ObdBluetoothManager.ConnectionState, onConnect: (BluetoothDevice) -> Unit) {
     when (connectionState) {
@@ -304,8 +295,6 @@ fun GuestPreConnectScreen(connectionState: ObdBluetoothManager.ConnectionState, 
         else -> DeviceSelectionScreen(onConnect = onConnect)
     }
 }
-
-// ─── Zakładki PRZED połączeniem (zalogowany) ──────────────────────────────────
 
 @Composable
 fun PreConnectTabs(
@@ -321,7 +310,6 @@ fun PreConnectTabs(
     showAddDialog: Boolean,
     vehicleToDelete: com.obdreader.app.auth.AuthManager.Vehicle?,
     isDeletingVehicle: Boolean,
-    // Edycja
     vehicleToEdit: com.obdreader.app.auth.AuthManager.Vehicle?,
     isEditingVehicle: Boolean,
     editVehicleError: String?,
@@ -423,8 +411,6 @@ fun PreConnectTabs(
     }
 }
 
-// ─── Zawartość PO połączeniu ──────────────────────────────────────────────────
-
 @Composable
 fun PostConnectContent(
     viewModel: ObdViewModel, isGuest: Boolean,
@@ -476,8 +462,6 @@ fun PostConnectContent(
         }
     }
 }
-
-// ─── Header ───────────────────────────────────────────────────────────────────
 
 @Composable
 fun ObdHeader(
@@ -539,8 +523,6 @@ fun ObdHeader(
         }
     }
 }
-
-// ─── Ekran parowania ──────────────────────────────────────────────────────────
 
 @Composable
 fun DeviceSelectionScreen(onConnect: (BluetoothDevice) -> Unit, errorBanner: String? = null) {
@@ -634,8 +616,6 @@ fun DeviceCard(device: BluetoothDevice, isObd: Boolean, onConnect: (BluetoothDev
     }
 }
 
-// ─── Ekran łączenia ───────────────────────────────────────────────────────────
-
 @Composable
 fun ConnectingScreen(message: String) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -646,8 +626,6 @@ fun ConnectingScreen(message: String) {
         }
     }
 }
-
-// ─── Dashboard Tab ────────────────────────────────────────────────────────────
 
 @Composable
 fun DashboardTab(sensorData: Map<ObdCommand, ObdResponseParser.ParsedValue>) {
@@ -718,8 +696,6 @@ fun StatusCard(parsed: ObdResponseParser.ParsedValue) {
     }
 }
 
-// ─── Sensors Tab ──────────────────────────────────────────────────────────────
-
 @Composable
 fun SensorsTab(sensorData: Map<ObdCommand, ObdResponseParser.ParsedValue>, supportedCommands: List<ObdCommand>, selectedCategory: ObdCategory?, onCategorySelect: (ObdCategory?) -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
@@ -727,10 +703,21 @@ fun SensorsTab(sensorData: Map<ObdCommand, ObdResponseParser.ParsedValue>, suppo
             item { CategoryChip(label = "Wszystkie", selected = selectedCategory == null, onClick = { onCategorySelect(null) }) }
             items(ObdCategory.values().toList()) { category -> CategoryChip(label = category.displayName, selected = selectedCategory == category, onClick = { onCategorySelect(category) }) }
         }
-        val displayCommands = if (selectedCategory != null) supportedCommands.filter { it in selectedCategory.pids }.ifEmpty { selectedCategory.pids }
-        else supportedCommands.ifEmpty { ObdCommand.values().toList() }
+        val displayCommands = remember(selectedCategory, supportedCommands) {
+            if (selectedCategory != null) {
+                selectedCategory.pids.filter { it.priority == ReadPriority.VIRTUAL || it in supportedCommands }
+            } else {
+                ObdCommand.values().filter { it.priority == ReadPriority.VIRTUAL || it in supportedCommands }
+            }
+        }
         LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(displayCommands, key = { it.cmdName }) { cmd -> SensorRow(command = cmd, parsed = sensorData[cmd], isSupported = cmd in supportedCommands) }
+            items(displayCommands, key = { it.cmdName }) { cmd -> 
+                SensorRow(
+                    command = cmd, 
+                    parsed = sensorData[cmd], 
+                    isSupported = cmd in supportedCommands || cmd.priority == ReadPriority.VIRTUAL
+                ) 
+            }
         }
     }
 }
@@ -760,8 +747,6 @@ fun SensorRow(command: ObdCommand, parsed: ObdResponseParser.ParsedValue?, isSup
     }
 }
 
-// ─── Logs Tab ─────────────────────────────────────────────────────────────────
-
 @Composable
 fun LogsTab(logMessages: List<String>) {
     LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp), contentPadding = PaddingValues(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -777,8 +762,6 @@ fun LogsTab(logMessages: List<String>) {
 fun Modifier.tabIndicatorOffset(currentTabPosition: TabPosition): Modifier {
     return this.then(Modifier.wrapContentSize(align = Alignment.BottomStart).offset(x = currentTabPosition.left).width(currentTabPosition.width))
 }
-
-// ─── Sessions Tab ─────────────────────────────────────────────────────────────
 
 @Composable
 fun SessionsTab(

@@ -9,6 +9,7 @@ import com.obdreader.app.bluetooth.ObdBluetoothManager
 import com.obdreader.app.obd.ObdCategory
 import com.obdreader.app.obd.ObdCommand
 import com.obdreader.app.obd.ObdDataLogger
+import com.obdreader.app.obd.ObdFormulaEngine
 import com.obdreader.app.obd.ObdResponseParser
 import com.obdreader.app.obd.ReadPriority
 import com.obdreader.app.obd.TelemetryUploader
@@ -26,12 +27,12 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     val dataLogger       = ObdDataLogger(application)
     val uploader         = TelemetryUploader(application)
     val authManager      = AuthManager(application)
+    private val formulaEngine = ObdFormulaEngine()
 
     private val BASE_INTERVAL_MS = 1000L
     private val MEDIUM_EVERY     = 5
     private val LOW_EVERY        = 30
 
-    // ─── Stan Auth ────────────────────────────────────────────────────────────
     private val _authPassed = MutableStateFlow(authManager.isLoggedIn)
     val authPassed: StateFlow<Boolean> = _authPassed.asStateFlow()
 
@@ -44,7 +45,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     private val _authError = MutableStateFlow<String?>(null)
     val authError: StateFlow<String?> = _authError.asStateFlow()
 
-    // ─── Stan pojazdów ────────────────────────────────────────────────────────
     private val _vehicles = MutableStateFlow<List<AuthManager.Vehicle>>(emptyList())
     val vehicles: StateFlow<List<AuthManager.Vehicle>> = _vehicles.asStateFlow()
 
@@ -72,7 +72,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     private val _isDeletingVehicle = MutableStateFlow(false)
     val isDeletingVehicle: StateFlow<Boolean> = _isDeletingVehicle.asStateFlow()
 
-    // ─── Edycja pojazdu ───────────────────────────────────────────────────────
     private val _vehicleToEdit = MutableStateFlow<AuthManager.Vehicle?>(null)
     val vehicleToEdit: StateFlow<AuthManager.Vehicle?> = _vehicleToEdit.asStateFlow()
 
@@ -85,7 +84,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     private val _showEditVehicleDialog = MutableStateFlow(false)
     val showEditVehicleDialog: StateFlow<Boolean> = _showEditVehicleDialog.asStateFlow()
 
-    // ─── Stan UI (OBD) ────────────────────────────────────────────────────────
     private val _sensorData = MutableStateFlow<Map<ObdCommand, ObdResponseParser.ParsedValue>>(emptyMap())
     val sensorData: StateFlow<Map<ObdCommand, ObdResponseParser.ParsedValue>> = _sensorData.asStateFlow()
 
@@ -120,8 +118,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
         }
         uploader.tokenProvider = { authManager.token }
     }
-
-    // ─── Auth ─────────────────────────────────────────────────────────────────
 
     fun login(email: String, password: String) {
         viewModelScope.launch {
@@ -171,8 +167,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearAuthError() { _authError.value = null }
-
-    // ─── Pojazdy ──────────────────────────────────────────────────────────────
 
     fun loadVehicles() {
         if (!authManager.isLoggedIn) return
@@ -253,7 +247,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
             when (val result = authManager.deleteVehicle(vehicle.id)) {
                 is AuthManager.VehicleResult.Deleted -> {
                     _vehicleToDelete.value = null
-                    // Jeśli usunięto aktywny pojazd — zresetuj wybór
                     if (_selectedVehicleId.value == vehicle.id) {
                         _selectedVehicleId.value = null
                         uploader.vehicleId = 0
@@ -270,8 +263,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
             _isDeletingVehicle.value = false
         }
     }
-
-    // ─── Edycja pojazdu ───────────────────────────────────────────────────────
 
     fun requestEditVehicle(vehicle: AuthManager.Vehicle) {
         _editVehicleError.value = null
@@ -310,8 +301,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
             _isEditingVehicle.value = false
         }
     }
-
-    // ─── Połączenie ───────────────────────────────────────────────────────────
 
     fun connect(device: BluetoothDevice) {
         connectJob?.cancel()
@@ -353,8 +342,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
         _isLogging.value  = false
         addLog("Rozłączono")
     }
-
-    // ─── Sesja ────────────────────────────────────────────────────────────────
 
     private fun startSession() {
         dataLogger.openSession(vin = vinInfo.value, email = authManager.savedEmail ?: "")
@@ -401,8 +388,6 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ─── Skanowanie z priorytetami ────────────────────────────────────────────
-
     fun startScanning() {
         if (_isScanning.value) return
         _isScanning.value = true
@@ -420,13 +405,13 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
 
             while (_isScanning.value && bluetoothManager.isConnected) {
                 val toRead = supportedCommands.value
-                    .filter { it.priority != ReadPriority.ONCE }
+                    .filter { it.priority != ReadPriority.ONCE && it.priority != ReadPriority.VIRTUAL }
                     .filter { cmd ->
                         when (cmd.priority) {
                             ReadPriority.HIGH   -> true
                             ReadPriority.MEDIUM -> cycleCount % MEDIUM_EVERY == 0
                             ReadPriority.LOW    -> cycleCount % LOW_EVERY == 0
-                            ReadPriority.ONCE   -> false
+                            else -> false
                         }
                     }
 
@@ -474,11 +459,14 @@ class ObdViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectCategory(category: ObdCategory?) { _selectedCategory.value = category }
 
-    // ─── Helpery ──────────────────────────────────────────────────────────────
-
     private fun mergeData(newData: Map<ObdCommand, ObdResponseParser.ParsedValue>) {
         val merged = _sensorData.value.toMutableMap()
         merged.putAll(newData)
+
+        val vehicle = vehicles.value.find { it.id == selectedVehicleId.value }
+        val virtualData = formulaEngine.calculate(merged, vehicle)
+        merged.putAll(virtualData)
+
         _sensorData.value = merged
     }
 

@@ -26,7 +26,6 @@ class AuthManager(private val context: Context) {
 
     private val BASE_URL = "https://api.nightingales.pl"
 
-    // ─── Token ────────────────────────────────────────────────────────────────
 
     var token: String?
         get() = prefs.getString(KEY_TOKEN, null)
@@ -43,7 +42,6 @@ class AuthManager(private val context: Context) {
         Log.d(TAG, "Wylogowano")
     }
 
-    // ─── Auth endpoints ───────────────────────────────────────────────────────
 
     sealed class AuthResult {
         object Success : AuthResult()
@@ -103,7 +101,6 @@ class AuthManager(private val context: Context) {
             }
         }
 
-    // ─── Vehicles endpoint ────────────────────────────────────────────────────
 
     sealed class VehicleResult {
         data class Success(val vehicles: List<Vehicle>) : VehicleResult()
@@ -200,10 +197,6 @@ class AuthManager(private val context: Context) {
         }
     }
 
-    /**
-     * Aktualizuje dane pojazdu.
-     * PUT /api/Vehicles/{id}
-     */
     suspend fun updateVehicle(
         id: Int,
         name: String,
@@ -258,7 +251,6 @@ class AuthManager(private val context: Context) {
         }
     }
 
-    // ─── HTTP helpers ─────────────────────────────────────────────────────────
 
     private fun postJson(urlStr: String, jsonBody: String): Pair<Int, String> {
         val url = URL(urlStr)

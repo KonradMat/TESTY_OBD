@@ -15,17 +15,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/**
- * Wysyła dane telemetryczne OBD2 na backend.
- *
- * Endpoint: POST /api/Telemetry/upload
- * Body: JSON identyczny jak plik sesji z ObdDataLogger
- *
- * Strategie wysyłania:
- * - BATCH:   bufor N rekordów → wyślij jeden request
- * - SESSION: wyślij cały plik sesji po jej zamknięciu
- * - RETRY:   nieudane requesty trafiają do kolejki retry
- */
 class TelemetryUploader(private val context: Context) {
 
     companion object {
@@ -36,8 +25,6 @@ class TelemetryUploader(private val context: Context) {
         private const val RETRY_DIR          = "upload_retry"
         private val ISO = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
     }
-
-    // ─── Konfiguracja (można zmienić w runtime) ───────────────────────────────
 
     var backendUrl: String = "https://api.nightingales.pl/api/Telemetry/upload"
 
@@ -51,8 +38,6 @@ class TelemetryUploader(private val context: Context) {
 
     var retryOnWifi: Boolean = true
 
-    // ─── Stan ─────────────────────────────────────────────────────────────────
-
     private var pendingBatch = mutableListOf<JSONObject>()
     private var sessionMeta  = JSONObject()
     var lastUploadStatus: UploadStatus = UploadStatus.IDLE
@@ -65,9 +50,6 @@ class TelemetryUploader(private val context: Context) {
         data class FAILED (val error: String,    val willRetry: Boolean) : UploadStatus()
     }
 
-    // ─── API publiczne ────────────────────────────────────────────────────────
-
-    /** Wywoływane przez ObdViewModel przy każdym nowym rekordzie */
     suspend fun onNewRecord(record: JSONObject, meta: JSONObject): Boolean {
         return withContext(Dispatchers.IO) {
             sessionMeta = meta
@@ -81,7 +63,6 @@ class TelemetryUploader(private val context: Context) {
         }
     }
 
-    /** Wywoływane po zamknięciu sesji – wysyła cały plik */
     suspend fun uploadSessionFile(file: File): Boolean = withContext(Dispatchers.IO) {
         if (!uploadOnSessionClose) return@withContext false
         try {
@@ -115,7 +96,6 @@ class TelemetryUploader(private val context: Context) {
         }
     }
 
-    /** Ponów wysyłanie plików z kolejki retry (np. po odzyskaniu sieci) */
     suspend fun retryPending(): Int = withContext(Dispatchers.IO) {
         val dir = File(context.filesDir, RETRY_DIR)
         if (!dir.exists()) return@withContext 0
@@ -125,7 +105,6 @@ class TelemetryUploader(private val context: Context) {
 
         files.forEach { file ->
             try {
-                // Zaktualizuj vehicle_id przed wysłaniem
                 val json = JSONObject(file.readText())
                 if (vehicleId > 0) json.put("vehicle_id", vehicleId)
                 json.remove("vin")
@@ -150,8 +129,6 @@ class TelemetryUploader(private val context: Context) {
         val dir = File(context.filesDir, RETRY_DIR)
         return dir.listFiles()?.count { it.name.endsWith(".json") } ?: 0
     }
-
-    // ─── Wewnętrzne ───────────────────────────────────────────────────────────
 
     private suspend fun uploadBatch(
         records: List<JSONObject>,

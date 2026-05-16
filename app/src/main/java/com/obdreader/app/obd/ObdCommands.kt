@@ -1,12 +1,8 @@
 package com.obdreader.app.obd
 
-enum class ReadPriority { HIGH, MEDIUM, LOW, ONCE }
+enum class ReadPriority { HIGH, MEDIUM, LOW, ONCE, VIRTUAL }
 
-/**
- * Pełna lista komend OBD2 – odpowiednik python-obd commands
- * Pokrywa wszystkie standardowe PIDy SAE J1979 (tryby 01, 09)
- * oraz rozszerzenia producentów (0x61–0x8C, 0xA0–0xA6)
- */
+
 enum class ObdCommand(
     val pid: String,
     val mode: String,
@@ -15,9 +11,6 @@ enum class ObdCommand(
     val description: String,
     val priority: ReadPriority = ReadPriority.MEDIUM
 ) {
-    // ═══════════════════════════════════════════════════════════════════════
-    // TRYB 01 – bitmapki obsługiwanych PIDów (ONCE, używane tylko do wykrywania)
-    // ═══════════════════════════════════════════════════════════════════════
     PIDS_A("00","01","PID support A",       "-","PIDs 01-20",                        ReadPriority.ONCE),
     PIDS_B("20","01","PID support B",       "-","PIDs 21-40",                        ReadPriority.ONCE),
     PIDS_C("40","01","PID support C",       "-","PIDs 41-60",                        ReadPriority.ONCE),
@@ -26,9 +19,6 @@ enum class ObdCommand(
     PIDS_F("A0","01","PID support F",       "-","PIDs A1-C0",                        ReadPriority.ONCE),
     PIDS_G("C0","01","PID support G",       "-","PIDs C1-E0",                        ReadPriority.ONCE),
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // TRYB 01 – PIDy 01–0F
-    // ═══════════════════════════════════════════════════════════════════════
     STATUS              ("01","01","Status OBD",              "-",  "Status MIL i liczba DTC",             ReadPriority.LOW),
     FREEZE_DTC          ("02","01","Zamrożony DTC",           "-",  "DTC który wywołał freeze frame",      ReadPriority.LOW),
     FUEL_STATUS         ("03","01","Status paliwa",           "-",  "Status układu paliwowego",            ReadPriority.LOW),
@@ -45,244 +35,363 @@ enum class ObdCommand(
     TIMING_ADVANCE      ("0E","01","Wyprzedzenie zapłonu",    "°",  "Wyprzedzenie zapłonu cyl. 1",         ReadPriority.HIGH),
     INTAKE_TEMP         ("0F","01","Temp. powietrza",         "°C", "Temperatura powietrza na wlocie",     ReadPriority.MEDIUM),
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // TRYB 01 – PIDy 10–1F
-    // ═══════════════════════════════════════════════════════════════════════
-    MAF                 ("10","01","Przepływ MAF",            "g/s","Masowy przepływ powietrza",           ReadPriority.HIGH),
-    THROTTLE_POS        ("11","01","Pozycja przepustnicy",    "%",  "Pozycja przepustnicy",                ReadPriority.HIGH),
-    SECONDARY_AIR_STATUS("12","01","Status powietrza wtór.",  "-",  "Status wtórnego powietrza",           ReadPriority.LOW),
-    O2_SENSORS          ("13","01","Sensory O2",              "-",  "Rozmieszczenie sond O2 (2-bank)",     ReadPriority.LOW),
-    O2_SENSOR_1_1       ("14","01","O2 B1S1 V",               "V",  "Sonda lambda bank1 sensor1 napięcie", ReadPriority.HIGH),
-    O2_SENSOR_1_2       ("15","01","O2 B1S2 V",               "V",  "Sonda lambda bank1 sensor2 napięcie", ReadPriority.HIGH),
-    O2_SENSOR_1_3       ("16","01","O2 B1S3 V",               "V",  "Sonda lambda bank1 sensor3 napięcie", ReadPriority.MEDIUM),
-    O2_SENSOR_1_4       ("17","01","O2 B1S4 V",               "V",  "Sonda lambda bank1 sensor4 napięcie", ReadPriority.MEDIUM),
-    O2_SENSOR_2_1       ("18","01","O2 B2S1 V",               "V",  "Sonda lambda bank2 sensor1 napięcie", ReadPriority.HIGH),
-    O2_SENSOR_2_2       ("19","01","O2 B2S2 V",               "V",  "Sonda lambda bank2 sensor2 napięcie", ReadPriority.HIGH),
-    O2_SENSOR_2_3       ("1A","01","O2 B2S3 V",               "V",  "Sonda lambda bank2 sensor3 napięcie", ReadPriority.MEDIUM),
-    O2_SENSOR_2_4       ("1B","01","O2 B2S4 V",               "V",  "Sonda lambda bank2 sensor4 napięcie", ReadPriority.MEDIUM),
-    OBD_COMPLIANCE      ("1C","01","Standard OBD",            "-",  "Standard OBD pojazdu",                ReadPriority.ONCE),
-    O2_SENSORS_ALT      ("1D","01","Sensory O2 (alt)",        "-",  "Rozmieszczenie sond O2 (4-bank)",     ReadPriority.LOW),
-    AUX_INPUT_STATUS    ("1E","01","Status wejścia aux",      "-",  "Status pomocniczego wejścia",         ReadPriority.LOW),
-    RUN_TIME            ("1F","01","Czas pracy silnika",      "s",  "Czas pracy silnika od uruchomienia",  ReadPriority.MEDIUM),
+    MAF                 ("10","01","Przepływ powietrza (MAF)","g/s","Przepływomierz masowy powietrza",     ReadPriority.HIGH),
+    THROTTLE_POS        ("11","01","Pozycja przepustnicy",    "%",  "Bezwzględna pozycja przepustnicy",    ReadPriority.HIGH),
+    AIR_STATUS          ("12","01","Status pow. wtórnego",    "-",  "Status doprowadzania pow. wtórnego",  ReadPriority.LOW),
+    SECONDARY_AIR_STATUS("12","01","Status pow. wtórnego",    "-",  "Status doprowadzania pow. wtórnego",  ReadPriority.LOW),
+    O2_SENSORS          ("13","01","Sondy O2 (obecne)",       "-",  "Lokalizacja obecnych sond O2",        ReadPriority.ONCE),
+    O2_SENSOR_1_1       ("14","01","Sonda O2 B1 S1",          "V",  "Napięcie sondy 1, bank 1",            ReadPriority.HIGH),
+    O2_SENSOR_1_2       ("15","01","Sonda O2 B1 S2",          "V",  "Napięcie sondy 2, bank 1",            ReadPriority.MEDIUM),
+    O2_SENSOR_1_3       ("16","01","Sonda O2 B1 S3",          "V",  "Napięcie sondy 3, bank 1",            ReadPriority.MEDIUM),
+    O2_SENSOR_1_4       ("17","01","Sonda O2 B1 S4",          "V",  "Napięcie sondy 4, bank 1",            ReadPriority.MEDIUM),
+    O2_SENSOR_2_1       ("18","01","Sonda O2 B2 S1",          "V",  "Napięcie sondy 1, bank 2",            ReadPriority.HIGH),
+    O2_SENSOR_2_2       ("19","01","Sonda O2 B2 S2",          "V",  "Napięcie sondy 2, bank 2",            ReadPriority.MEDIUM),
+    O2_SENSOR_2_3       ("1A","01","Sonda O2 B2 S3",          "V",  "Napięcie sondy 3, bank 2",            ReadPriority.MEDIUM),
+    O2_SENSOR_2_4       ("1B","01","Sonda O2 B2 S4",          "V",  "Napięcie sondy 4, bank 2",            ReadPriority.MEDIUM),
+    OBD_COMPLIANCE      ("1C","01","Standard OBD",            "-",  "Standard OBD do jakiego należy ECU",  ReadPriority.ONCE),
+    O2_SENSORS_ALT      ("1D","01","Sondy O2 (obecne 2)",     "-",  "Lokalizacja sond (alternatywna)",     ReadPriority.ONCE),
+    AUX_INPUT_STATUS    ("1E","01","Status wejść aux",        "-",  "Status wejść pomocniczych (np. PTO)", ReadPriority.LOW),
+    RUN_TIME            ("1F","01","Czas od uruchomienia",    "s",  "Czas od uruchomienia silnika",        ReadPriority.MEDIUM),
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // TRYB 01 – PIDy 21–2F
-    // ═══════════════════════════════════════════════════════════════════════
-    DISTANCE_W_MIL      ("21","01","Dystans z MIL",           "km", "Dystans od włączenia lampki MIL",     ReadPriority.LOW),
-    FUEL_RAIL_PRESSURE_VAC("22","01","Ciśnienie szyny (vac)", "kPa","Ciśnienie szyny paliwa – próżnia",    ReadPriority.MEDIUM),
-    FUEL_RAIL_PRESSURE_DIRECT("23","01","Ciśnienie szyny (bezp.)","kPa","Bezpośrednie ciśnienie szyny",    ReadPriority.HIGH),
-    O2_S1_WR_LAMBDA     ("24","01","O2 WR B1S1 λ+V",          "-",  "Lambda+V sondy wide-range B1S1",      ReadPriority.HIGH),
-    O2_S2_WR_LAMBDA     ("25","01","O2 WR B1S2 λ+V",          "-",  "Lambda+V sondy wide-range B1S2",      ReadPriority.HIGH),
-    O2_S3_WR_LAMBDA     ("26","01","O2 WR B2S1 λ+V",          "-",  "Lambda+V sondy wide-range B2S1",      ReadPriority.MEDIUM),
-    O2_S4_WR_LAMBDA     ("27","01","O2 WR B2S2 λ+V",          "-",  "Lambda+V sondy wide-range B2S2",      ReadPriority.MEDIUM),
-    O2_S5_WR_LAMBDA     ("28","01","O2 WR B1S3 λ+V",          "-",  "Lambda+V sondy wide-range B1S3",      ReadPriority.MEDIUM),
-    O2_S6_WR_LAMBDA     ("29","01","O2 WR B1S4 λ+V",          "-",  "Lambda+V sondy wide-range B1S4",      ReadPriority.MEDIUM),
-    O2_S7_WR_LAMBDA     ("2A","01","O2 WR B2S3 λ+V",          "-",  "Lambda+V sondy wide-range B2S3",      ReadPriority.MEDIUM),
-    O2_S8_WR_LAMBDA     ("2B","01","O2 WR B2S4 λ+V",          "-",  "Lambda+V sondy wide-range B2S4",      ReadPriority.MEDIUM),
-    COMMANDED_EGR       ("2C","01","Polecenie EGR",           "%",  "Zadany stopień otwarcia EGR",         ReadPriority.MEDIUM),
-    EGR_ERROR           ("2D","01","Błąd EGR",                "%",  "Błąd zaworu EGR",                     ReadPriority.MEDIUM),
-    EVAP_PURGE          ("2E","01","Oczyszczanie EVAP",       "%",  "Polecenie zaworu oczyszczania EVAP",  ReadPriority.MEDIUM),
-    FUEL_LEVEL          ("2F","01","Poziom paliwa",           "%",  "Poziom paliwa w zbiorniku",           ReadPriority.LOW),
+    PIDS_B_ALT          ("20","01","PID support B",       "-","PIDs 21-40",                        ReadPriority.ONCE),
+    DISTANCE_W_MIL      ("21","01","Dystans z MIL",           "km", "Dystans przejechany z zapalonym MIL", ReadPriority.MEDIUM),
+    FUEL_RAIL_PRESSURE_VAC("22","01","Ciśn. paliwa (vac)",     "kPa","Ciśnienie na szynie (wzgl. próżni)",  ReadPriority.MEDIUM),
+    FUEL_RAIL_PRESSURE_DIRECT("23","01","Ciśn. paliwa (rail)",  "kPa","Ciśnienie na szynie (bezp. wtrysk)", ReadPriority.MEDIUM),
+    O2_S1_WR_LAMBDA     ("24","01","Lambda S1 (szerokop.)",   "λ",  "Współczynnik Lambda (S1)",            ReadPriority.HIGH),
+    O2_S2_WR_LAMBDA     ("25","01","Lambda S2 (szerokop.)",   "λ",  "Współczynnik Lambda (S2)",            ReadPriority.MEDIUM),
+    O2_S3_WR_LAMBDA     ("26","01","Lambda S3 (szerokop.)",   "λ",  "Współczynnik Lambda (S3)",            ReadPriority.MEDIUM),
+    O2_S4_WR_LAMBDA     ("27","01","Lambda S4 (szerokop.)",   "λ",  "Współczynnik Lambda (S4)",            ReadPriority.MEDIUM),
+    O2_S5_WR_LAMBDA     ("28","01","Lambda S5 (szerokop.)",   "λ",  "Współczynnik Lambda (S5)",            ReadPriority.MEDIUM),
+    O2_S6_WR_LAMBDA     ("29","01","Lambda S6 (szerokop.)",   "λ",  "Współczynnik Lambda (S6)",            ReadPriority.MEDIUM),
+    O2_S7_WR_LAMBDA     ("2A","01","Lambda S7 (szerokop.)",   "λ",  "Współczynnik Lambda (S7)",            ReadPriority.MEDIUM),
+    O2_S8_WR_LAMBDA     ("2B","01","Lambda S8 (szerokop.)",   "λ",  "Współczynnik Lambda (S8)",            ReadPriority.MEDIUM),
+    COMMANDED_EGR       ("2C","01","Wysterowanie EGR",        "%",  "Zadany stopień otwarcia EGR",         ReadPriority.MEDIUM),
+    EGR_ERROR           ("2D","01","Błąd EGR",                "%",  "Różnica między zadanym a rzecz. EGR", ReadPriority.LOW),
+    COMMANDED_EVAP      ("2E","01","Wysterowanie EVAP",       "%",  "Zadany stopień przedmuchu par paliwa",ReadPriority.LOW),
+    EVAP_PURGE          ("2E","01","Wysterowanie EVAP",       "%",  "Zadany stopień przedmuchu par paliwa",ReadPriority.LOW),
+    FUEL_LEVEL          ("2F","01","Poziom paliwa",           "%",  "Ilość paliwa w zbiorniku",            ReadPriority.MEDIUM),
+    WARMUPS_SINCE_DTC   ("30","01","Nagrzania od kasowania",  "-",  "Liczba nagrzań od skasowania DTC",    ReadPriority.LOW),
+    WARMUPS_SINCE_DTC_CLEAR("30","01","Nagrzania od kasowania","-",  "Liczba nagrzań od skasowania DTC",    ReadPriority.LOW),
+    DISTANCE_SINCE_DTC_CLEAR("31","01","Dystans od kasowania", "km", "Dystans przejechany od skasow. DTC", ReadPriority.MEDIUM),
+    EVAP_VAPOR_PRESSURE ("32","01","Ciśnienie par paliwa",    "Pa", "Ciśnienie par w układzie EVAP",       ReadPriority.LOW),
+    BARO_PRESSURE       ("33","01","Ciśnienie barometryczne", "kPa","Ciśnienie atmosferyczne",             ReadPriority.MEDIUM),
+    O2_S1_WR_CURRENT    ("34","01","Prąd sondy O2 S1",        "mA", "Prąd pomiarowy sondy szerokopasmowej",ReadPriority.MEDIUM),
+    O2_S2_WR_CURRENT    ("35","01","Prąd sondy O2 S2",        "mA", "Prąd pomiarowy sondy szerokopasmowej",ReadPriority.MEDIUM),
+    O2_S3_WR_CURRENT    ("36","01","Prąd sondy O2 S3",        "mA", "Prąd pomiarowy sondy szerokopasmowej",ReadPriority.MEDIUM),
+    O2_S4_WR_CURRENT    ("37","01","Prąd sondy O2 S4",        "mA", "Prąd pomiarowy sondy szerokopasmowej",ReadPriority.MEDIUM),
+    O2_S5_WR_CURRENT    ("38","01","Prąd sondy O2 S5",        "mA", "Prąd pomiarowy sondy szerokopasmowej",ReadPriority.MEDIUM),
+    O2_S6_WR_CURRENT    ("39","01","Prąd sondy O2 S6",        "mA", "Prąd pomiarowy sondy szerokopasmowej",ReadPriority.MEDIUM),
+    O2_S7_WR_CURRENT    ("3A","01","Prąd sondy O2 S7",        "mA", "Prąd pomiarowy sondy szerokopasmowej",ReadPriority.MEDIUM),
+    O2_S8_WR_CURRENT    ("3B","01","Prąd sondy O2 S8",        "mA", "Prąd pomiarowy sondy szerokopasmowej",ReadPriority.MEDIUM),
+    CATALYST_TEMP_B1S1  ("3C","01","Temp. kata B1 S1",        "°C", "Temperatura katalizatora Bank 1 S1",  ReadPriority.MEDIUM),
+    CATALYST_TEMP_B2S1  ("3D","01","Temp. kata B2 S1",        "°C", "Temperatura katalizatora Bank 2 S1",  ReadPriority.MEDIUM),
+    CATALYST_TEMP_B1S2  ("3E","01","Temp. kata B1 S2",        "°C", "Temperatura katalizatora Bank 1 S2",  ReadPriority.MEDIUM),
+    CATALYST_TEMP_B2S2  ("3F","01","Temp. kata B2 S2",        "°C", "Temperatura katalizatora Bank 2 S2",  ReadPriority.MEDIUM),
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // TRYB 01 – PIDy 30–3F
-    // ═══════════════════════════════════════════════════════════════════════
-    WARMUPS_SINCE_DTC_CLEAR("30","01","Rozgrzewania od kasowan.","-","Liczba rozgrzewań od kasowania DTC", ReadPriority.LOW),
-    DISTANCE_SINCE_DTC_CLEAR("31","01","Dystans od kasowania", "km","Dystans od kasowania DTC",            ReadPriority.LOW),
-    EVAP_VAPOR_PRESSURE ("32","01","Ciśnienie EVAP",          "Pa", "Ciśnienie par EVAP",                  ReadPriority.MEDIUM),
-    BARO_PRESSURE       ("33","01","Ciśnienie atmosf.",        "kPa","Ciśnienie atmosferyczne",             ReadPriority.LOW),
-    O2_S1_WR_CURRENT    ("34","01","O2 WR B1S1 λ+I",          "mA", "Lambda+prąd sondy WR B1S1",          ReadPriority.HIGH),
-    O2_S2_WR_CURRENT    ("35","01","O2 WR B1S2 λ+I",          "mA", "Lambda+prąd sondy WR B1S2",          ReadPriority.HIGH),
-    O2_S3_WR_CURRENT    ("36","01","O2 WR B2S1 λ+I",          "mA", "Lambda+prąd sondy WR B2S1",          ReadPriority.MEDIUM),
-    O2_S4_WR_CURRENT    ("37","01","O2 WR B2S2 λ+I",          "mA", "Lambda+prąd sondy WR B2S2",          ReadPriority.MEDIUM),
-    O2_S5_WR_CURRENT    ("38","01","O2 WR B1S3 λ+I",          "mA", "Lambda+prąd sondy WR B1S3",          ReadPriority.MEDIUM),
-    O2_S6_WR_CURRENT    ("39","01","O2 WR B1S4 λ+I",          "mA", "Lambda+prąd sondy WR B1S4",          ReadPriority.MEDIUM),
-    O2_S7_WR_CURRENT    ("3A","01","O2 WR B2S3 λ+I",          "mA", "Lambda+prąd sondy WR B2S3",          ReadPriority.MEDIUM),
-    O2_S8_WR_CURRENT    ("3B","01","O2 WR B2S4 λ+I",          "mA", "Lambda+prąd sondy WR B2S4",          ReadPriority.MEDIUM),
-    CATALYST_TEMP_B1S1  ("3C","01","Temp. kat. B1S1",         "°C", "Temperatura katalizatora B1S1",       ReadPriority.MEDIUM),
-    CATALYST_TEMP_B2S1  ("3D","01","Temp. kat. B2S1",         "°C", "Temperatura katalizatora B2S1",       ReadPriority.MEDIUM),
-    CATALYST_TEMP_B1S2  ("3E","01","Temp. kat. B1S2",         "°C", "Temperatura katalizatora B1S2",       ReadPriority.MEDIUM),
-    CATALYST_TEMP_B2S2  ("3F","01","Temp. kat. B2S2",         "°C", "Temperatura katalizatora B2S2",       ReadPriority.MEDIUM),
+    MONITOR_STATUS_DRIVE("41","01","Status monitorów (cykl)", "-",  "Status monitorów w obecnym cyklu",    ReadPriority.MEDIUM),
+    CONTROL_MODULE_VOLTAGE("42","01","Napięcie akumulatora",  "V",  "Napięcie na module sterującym",       ReadPriority.HIGH),
+    ABSOLUTE_LOAD       ("43","01","Obciążenie bezwzgl.",     "%",  "Bezwzględna wartość obciążenia",      ReadPriority.MEDIUM),
+    COMMANDED_EQUIV_RATIO("44","01","Zadany stos. AFR",       "λ",  "Zadany współczynnik nadmiaru pow.",   ReadPriority.MEDIUM),
+    RELATIVE_THROTTLE_POS("45","01","Względna poz. przep.",   "%",  "Względna pozycja przepustnicy",       ReadPriority.MEDIUM),
+    AMBIENT_AIR_TEMP    ("46","01","Temp. zewnętrzna",        "°C", "Temperatura otoczenia",               ReadPriority.LOW),
+    THROTTLE_POS_B      ("47","01","Pozycja przepustnicy B",  "%",  "Czujnik pozycji przepustnicy B",      ReadPriority.MEDIUM),
+    THROTTLE_POS_C      ("48","01","Pozycja przepustnicy C",  "%",  "Czujnik pozycji przepustnicy C",      ReadPriority.MEDIUM),
+    ACCELERATOR_POS_D   ("49","01","Pozycja pedału gazu D",   "%",  "Czujnik pozycji pedału gazu D",       ReadPriority.MEDIUM),
+    ACCELERATOR_POS_E   ("4A","01","Pozycja pedału gazu E",   "%",  "Czujnik pozycji pedału gazu E",       ReadPriority.MEDIUM),
+    ACCELERATOR_POS_F   ("4B","01","Pozycja pedału gazu F",   "%",  "Czujnik pozycji pedału gazu F",       ReadPriority.MEDIUM),
+    COMMANDED_THROTTLE_ACTUATOR("4C","01","Wysterowanie przep.","-","Zadane wysterowanie przepustnicy",    ReadPriority.MEDIUM),
+    THROTTLE_ACTUATOR   ("4C","01","Wysterowanie przep.",     "-",  "Zadane wysterowanie przepustnicy",    ReadPriority.MEDIUM),
+    TIME_WITH_MIL       ("4D","01","Czas z MIL",             "min","Czas pracy silnika z zapalonym MIL",  ReadPriority.LOW),
+    TIME_SINCE_DTC_CLEARED("4E","01","Czas od kasowania DTC","min","Czas od ostatniego skasowania DTC",   ReadPriority.LOW),
+    MAX_VALUES          ("4F","01","Wartości maksymalne",     "-",  "Maks. wartości AFR, O2 i ciśnienia",  ReadPriority.ONCE),
+    MAX_MAF_RATE        ("50","01","Maks. przepływ MAF",      "g/s","Maksymalna wartość MAF",              ReadPriority.ONCE),
+    MAX_MAF             ("50","01","Maks. MAF",               "g/s","Maksymalna wartość MAF",              ReadPriority.ONCE),
+    FUEL_TYPE           ("51","01","Rodzaj paliwa",           "-",  "Typ paliwa używany przez pojazd",     ReadPriority.ONCE),
+    ETHANOL_PERCENT     ("52","01","Zawartość Etanolu",       "%",  "Procentowa zawartość etanolu",        ReadPriority.LOW),
+    EVAP_VAPOR_PRESSURE_ABS("53","01","Abs. ciśn. EVAP",      "kPa","Bezwzględne ciśnienie układu EVAP",   ReadPriority.LOW),
+    EVAP_VAPOR_PRESSURE_ALT("54","01","Ciśn. par (alt)",      "Pa", "Alternatywny czujnik ciśnienia EVAP", ReadPriority.LOW),
+    EVAP_VAPOR_PRESSURE2("54","01","Ciśnienie par (alt 2)",    "Pa", "Alternatywny czujnik ciśnienia EVAP", ReadPriority.LOW),
+    EVAP_VAPOR_PRESSURE3("53","01","Ciśnienie par (abs)",    "kPa", "Bezwzględne ciśnienie par EVAP",     ReadPriority.LOW),
+    EVAP_SYSTEM_VAPOR   ("54","01","Ciśnienie par (sys)",     "Pa", "Ciśnienie par w układzie EVAP",       ReadPriority.LOW),
+    SHORT_FUEL_TRIM_B1S1("55","01","STFT B1 S1",              "%",  "Korekta paliwa Bank 1 S1",            ReadPriority.MEDIUM),
+    SHORT_FUEL_TRIM_B1  ("55","01","STFT B1 S1",              "%",  "Korekta paliwa Bank 1 S1",            ReadPriority.MEDIUM),
+    LONG_FUEL_TRIM_B1S1 ("56","01","LTFT B1 S1",              "%",  "Korekta paliwa Bank 1 S1",            ReadPriority.MEDIUM),
+    LONG_FUEL_TRIM_B1   ("56","01","LTFT B1 S1",              "%",  "Korekta paliwa Bank 1 S1",            ReadPriority.MEDIUM),
+    SHORT_FUEL_TRIM_B2S1("57","01","STFT B2 S1",              "%",  "Korekta paliwa Bank 2 S1",            ReadPriority.MEDIUM),
+    SHORT_FUEL_TRIM_B2  ("57","01","STFT B2 S1",              "%",  "Korekta paliwa Bank 2 S1",            ReadPriority.MEDIUM),
+    LONG_FUEL_TRIM_B2S1 ("58","01","LTFT B2 S1",              "%",  "Korekta paliwa Bank 2 S1",            ReadPriority.MEDIUM),
+    LONG_FUEL_TRIM_B2   ("58","01","LTFT B2 S1",              "%",  "Korekta paliwa Bank 2 S1",            ReadPriority.MEDIUM),
+    FUEL_RAIL_PRESSURE_ABS("59","01","Abs. ciśn. paliwa",     "kPa","Bezwzględne ciśnienie paliwa",        ReadPriority.MEDIUM),
+    ACCELERATOR_POS_REL ("5A","01","Wzgl. poz. pedału",       "%",  "Względna pozycja pedału gazu",        ReadPriority.MEDIUM),
+    HYBRID_BATTERY_LIFE ("5B","01","Żywotność bat. hybryd.","%",  "Pozostała sprawność baterii",         ReadPriority.LOW),
+    DIESEL_EXHAUST_FLUID("5E","01","Poziom AdBlue",           "%",  "Poziom mocznika (AdBlue)",            ReadPriority.LOW),
+    COMMANDED_DPF       ("5F","01","Wysterowanie DPF",        "%",  "Zadane wysterowanie regeneracji DPF", ReadPriority.LOW),
+    ENGINE_OIL_TEMP     ("5C","01","Temp. oleju silnika",     "°C", "Temperatura oleju silnikowego",       ReadPriority.MEDIUM),
+    OIL_TEMP            ("5C","01","Temp. oleju silnika",     "°C", "Temperatura oleju silnikowego",       ReadPriority.MEDIUM),
+    FUEL_INJECT_TIMING  ("5D","01","Czas wtrysku paliwa",     "°",  "Moment wtrysku (kąt)",                ReadPriority.MEDIUM),
+    FUEL_RATE           ("5E","01","Zużycie paliwa",          "L/h","Godzinowe zużycie paliwa",            ReadPriority.HIGH),
+    CYLINDER_FUEL_RATE  ("5F","01","Wtrysk na cylinder",      "mg/suw","Dawka paliwa na cylinder",        ReadPriority.MEDIUM),
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // TRYB 01 – PIDy 41–4E
-    // ═══════════════════════════════════════════════════════════════════════
-    MONITOR_STATUS_DRIVE("41","01","Status monitorów",        "-",  "Status monitorów OBD (bieżący jazdy)",ReadPriority.LOW),
-    CONTROL_MODULE_VOLTAGE("42","01","Napięcie modułu",       "V",  "Napięcie modułu sterującego",         ReadPriority.MEDIUM),
-    ABSOLUTE_LOAD       ("43","01","Bezwzgl. obciążenie",     "%",  "Bezwzgl. wartość obciążenia silnika", ReadPriority.HIGH),
-    COMMANDED_EQUIV_RATIO("44","01","Współczynnik lambda",    "-",  "Zadany współczynnik równoważności",   ReadPriority.HIGH),
-    RELATIVE_THROTTLE_POS("45","01","Względna przepust.",     "%",  "Względna pozycja przepustnicy",       ReadPriority.HIGH),
-    AMBIENT_AIR_TEMP    ("46","01","Temp. zewn.",             "°C", "Temperatura otoczenia",               ReadPriority.LOW),
-    THROTTLE_POS_B      ("47","01","Przepustnica B",          "%",  "Bezwzgl. pozycja przepustnicy B",     ReadPriority.MEDIUM),
-    THROTTLE_POS_C      ("48","01","Przepustnica C",          "%",  "Bezwzgl. pozycja przepustnicy C",     ReadPriority.MEDIUM),
-    ACCELERATOR_POS_D   ("49","01","Pedał gazu D",            "%",  "Bezwzgl. pozycja pedału gazu D",      ReadPriority.HIGH),
-    ACCELERATOR_POS_E   ("4A","01","Pedał gazu E",            "%",  "Bezwzgl. pozycja pedału gazu E",      ReadPriority.MEDIUM),
-    ACCELERATOR_POS_F   ("4B","01","Pedał gazu F",            "%",  "Bezwzgl. pozycja pedału gazu F",      ReadPriority.MEDIUM),
-    THROTTLE_ACTUATOR   ("4C","01","Aktuator przepustnicy",   "%",  "Polecenie sterowania przepustnicą",   ReadPriority.MEDIUM),
-    TIME_WITH_MIL       ("4D","01","Czas z MIL",              "min","Czas jazdy z lampką MIL",             ReadPriority.LOW),
-    TIME_SINCE_DTC_CLEARED("4E","01","Czas od kasowania DTC","min", "Czas od kasowania DTC",              ReadPriority.LOW),
+    EMISSION_REQUIREMENTS("60","01","Wymogi emisji",          "-",  "Wymagania dotyczące emisji spalin",   ReadPriority.ONCE),
+    DRIVER_DEMAND_TORQUE("61","01","Moment zadany",           "%",  "Moment obrotowy zadany przez kierow.",ReadPriority.MEDIUM),
+    ACTUAL_TORQUE       ("62","01","Moment obrotowy (akt)",   "%",  "Rzeczywisty moment obrotowy silnika", ReadPriority.MEDIUM),
+    REFERENCE_TORQUE    ("63","01","Moment odniesienia",      "Nm", "Nominalny moment obrotowy silnika",   ReadPriority.ONCE),
+    ENGINE_PERCENT_TORQUE("64","01","Moment obrotowy (%)",    "%",  "Moment obrotowy silnika w proc.",     ReadPriority.MEDIUM),
+    BOOST_PRESSURE      ("70","01","Ciśnienie doładowania",   "kPa","Ciśnienie doładowania turbo",         ReadPriority.HIGH),
+    TURBO_RPM           ("74","01","Obroty turbiny",          "rpm","Prędkość obrotowa turbosprężarki",    ReadPriority.MEDIUM),
+    TURBO_TEMP_IN       ("75","01","Temp. wejścia turbo",     "°C", "Temperatura spalin przed turbo",      ReadPriority.MEDIUM),
+    TURBO_TEMP_OUT      ("76","01","Temp. wyjścia turbo",     "°C", "Temperatura spalin za turbo",         ReadPriority.MEDIUM),
+    INTERCOOLER_TEMP    ("77","01","Temp. intercoolera",      "°C", "Temperatura za chłodnicą pow.",       ReadPriority.MEDIUM),
+    EXHAUST_GAS_TEMP_1  ("78","01","Temp. spalin (Bank 1)",   "°C", "Czujnik temperatury spalin 1",        ReadPriority.MEDIUM),
+    EXHAUST_GAS_TEMP_2  ("79","01","Temp. spalin (Bank 2)",   "°C", "Czujnik temperatury spalin 2",        ReadPriority.MEDIUM),
+    DPF_DIFFERENTIAL_PRESSURE("7A","01","Różnica ciśn. DPF",  "kPa","Różnica ciśnień na filtrze DPF",      ReadPriority.MEDIUM),
+    DPF_TEMP_IN         ("7C","01","Temp. wejścia DPF",       "°C", "Temperatura spalin przed DPF",        ReadPriority.MEDIUM),
+    DPF_TEMP_OUT        ("7D","01","Temp. wyjścia DPF",       "°C", "Temperatura spalin za DPF",           ReadPriority.MEDIUM),
+    EGT_SENSOR_1        ("78","01","Temp. spalin (S1)",       "°C", "Czujnik temperatury spalin 1",        ReadPriority.MEDIUM),
+    EGT_SENSOR_2        ("79","01","Temp. spalin (S2)",       "°C", "Czujnik temperatury spalin 2",        ReadPriority.MEDIUM),
+    EXHAUST_PRESSURE    ("7A","01","Ciśnienie spalin",        "kPa","Ciśnienie gazów spalinowych",         ReadPriority.MEDIUM),
+    DPF_STATUS          ("7F","01","Status DPF",              "-",  "Status filtra cząstek stałych",       ReadPriority.MEDIUM),
+    NOX_SENSOR          ("83","01","Czujnik NOx",             "ppm","Stężenie tlenków azotu",              ReadPriority.MEDIUM),
+    NOX_SENSOR_CORRECTED("83","01","Czujnik NOx (skor.)",     "ppm","Skorygowane stężenie NOx",            ReadPriority.MEDIUM),
+    PM_SENSOR           ("86","01","Czujnik PM",              "mg/m³","Stężenie cząstek stałych",          ReadPriority.MEDIUM),
+    ENGINE_COOLANT_TEMP2("67","01","Temp. chłodnicy 2",       "°C", "Drugi czujnik temperatury płynu",     ReadPriority.MEDIUM),
+    INTAKE_AIR_TEMP2    ("68","01","Temp. powietrza 2",       "°C", "Drugi czujnik temperatury powietrza", ReadPriority.MEDIUM),
+    MANIFOLD_SURFACE_TEMP("69","01","Temp. powierz. dolotu",  "°C", "Temperatura powierzchni kolektora",   ReadPriority.LOW),
+    COMMANDED_EGR2      ("69","01","Wysterowanie EGR 2",      "%",  "Zadane wysterowanie EGR (Bank 2)",    ReadPriority.MEDIUM),
+    INTAKE_MANIFOLD_PRESSURE("6A","01","Ciśn. kolektora dol.", "kPa","Absolutne ciśnienie w kolektorze",   ReadPriority.HIGH),
+    TRANSMISSION_ACTUAL_GEAR("A4","01","Bieg rzeczywisty",    "-",  "Aktualnie wybrany bieg",              ReadPriority.MEDIUM),
+    ODOMETER            ("A6","01","Przebieg",                "km", "Całkowity przebieg pojazdu",          ReadPriority.ONCE),
+    MASS_AIR_FLOW_SENSOR("66","01","MAF (S)",                 "g/s","Czujnik przepływu powietrza",         ReadPriority.HIGH),
+    ENGINE_OIL_TEMP2    ("67","01","Temp. oleju 2",           "°C", "Drugi czujnik temperatury oleju",     ReadPriority.MEDIUM),
+    ENGINE_RUN_TIME_EXT ("7E","01","Czas pracy (ext)",        "s",  "Całkowity czas pracy silnika",        ReadPriority.LOW),
+    ENGINE_RUN_TIME_AECD("7F","01","Czas pracy AECD",         "s",  "Czas pracy silnika w trybie AECD",    ReadPriority.LOW),
+    ENGINE_RUN_TIME_AECD2("80","01","Czas pracy AECD 2",      "s",  "Czas pracy silnika w trybie AECD 2",  ReadPriority.LOW),
+    AUX_IO_SUPPORTED    ("81","01","Obsługa we/wy",           "-",  "Obsługiwane wejścia/wyjścia",         ReadPriority.ONCE),
+    NOX_REAGENT_SYSTEM  ("84","01","System reagentu NOx",     "-",  "Status systemu reagentu NOx",         ReadPriority.MEDIUM),
+    SCR_INDUCE_SYSTEM   ("85","01","System SCR",              "-",  "Status systemu SCR",                  ReadPriority.MEDIUM),
+    AECD_11_15          ("88","01","AECD 11-15",              "-",  "Status AECD 11-15",                  ReadPriority.LOW),
+    AECD_16_20          ("89","01","AECD 16-20",              "-",  "Status AECD 16-20",                  ReadPriority.LOW),
+    DIESEL_AFTERTREAT   ("8B","01","Diesel Aftertreatment",   "-",  "Diesel Aftertreatment Status",        ReadPriority.MEDIUM),
+    VGT_STATUS          ("8D","01","Status VGT",              "-",  "Status turbiny o zmiennej geometrii",ReadPriority.MEDIUM),
+    WASTEGATE_STATUS    ("8E","01","Status Wastegate",        "-",  "Status zaworu wastegate",             ReadPriority.MEDIUM),
+    NOX_NTE_STATUS      ("90","01","Status NOx NTE",          "-",  "Status limitów NOx NTE",             ReadPriority.MEDIUM),
+    PM_NTE_STATUS       ("91","01","Status PM NTE",           "-",  "Status limitów PM NTE",              ReadPriority.MEDIUM),
+    O2_SENSOR_WIDE      ("92","01","Sonda O2 szeroka",        "mA", "Szerokopasmowa sonda O2",             ReadPriority.HIGH),
+    PERF_TRACKING       ("00","09","Monitorowanie wydajności","-",  "In-use Performance Tracking",         ReadPriority.ONCE),
+    ABSOLUTE_THROTTLE_POS_B("47","01","Pozycja przep. B",      "%",  "Bezwzględna pozycja przepustnicy B",  ReadPriority.MEDIUM),
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // TRYB 01 – PIDy 4F–5E (rozszerzenia SAE)
-    // ═══════════════════════════════════════════════════════════════════════
-    MAX_VALUES          ("4F","01","Maks. wartości",          "-",  "Maks. λ, napięcie O2, prąd O2, ciśn. dolotowe", ReadPriority.LOW),
-    MAX_MAF             ("50","01","Maks. MAF",               "g/s","Maks. wartość przepływu MAF",         ReadPriority.LOW),
-    FUEL_TYPE           ("51","01","Typ paliwa",              "-",  "Typ paliwa",                          ReadPriority.ONCE),
-    ETHANOL_PERCENT     ("52","01","% etanolu",               "%",  "Zawartość etanolu w paliwie",         ReadPriority.LOW),
-    EVAP_VAPOR_PRESSURE2("53","01","Ciśnienie EVAP abs.",     "kPa","Bezwzgl. ciśnienie par EVAP",         ReadPriority.MEDIUM),
-    EVAP_VAPOR_PRESSURE3("54","01","Ciśnienie EVAP alt.",     "Pa", "Alternatywne ciśnienie par EVAP",     ReadPriority.MEDIUM),
-    SHORT_FUEL_TRIM_B1  ("55","01","STFT B1 (alt)",           "%",  "Krótkoterm. korekta paliwa B1 alt",   ReadPriority.HIGH),
-    LONG_FUEL_TRIM_B1   ("56","01","LTFT B1 (alt)",           "%",  "Długoterm. korekta paliwa B1 alt",    ReadPriority.MEDIUM),
-    SHORT_FUEL_TRIM_B2  ("57","01","STFT B2 (alt)",           "%",  "Krótkoterm. korekta paliwa B2 alt",   ReadPriority.HIGH),
-    LONG_FUEL_TRIM_B2   ("58","01","LTFT B2 (alt)",           "%",  "Długoterm. korekta paliwa B2 alt",    ReadPriority.MEDIUM),
-    FUEL_RAIL_PRESSURE_ABS("59","01","Ciśnienie szyny abs.",  "kPa","Bezwzgl. ciśnienie szyny paliwa",     ReadPriority.HIGH),
-    ACCELERATOR_POS_REL ("5A","01","Pedał gazu wzgl.",        "%",  "Względna pozycja pedału gazu",        ReadPriority.HIGH),
-    HYBRID_BATTERY_LIFE ("5B","01","Żywotność baterii hyb.", "%",  "Stan naładowania baterii hybrydowej",  ReadPriority.LOW),
-    ENGINE_OIL_TEMP     ("5C","01","Temp. oleju silnika",    "°C", "Temperatura oleju silnikowego",       ReadPriority.MEDIUM),
-    FUEL_INJECT_TIMING  ("5D","01","Timing wtrysku",          "°",  "Timing wtrysku paliwa",               ReadPriority.HIGH),
-    FUEL_RATE           ("5E","01","Zużycie paliwa",          "L/h","Chwilowe zużycie paliwa",             ReadPriority.HIGH),
+    VIN                 ("02","09","Numer VIN",               "-",  "Vehicle Identification Number",       ReadPriority.ONCE),
+    ECU_NAME            ("0A","09","Nazwa ECU",               "-",  "Nazwa modułu sterującego",            ReadPriority.ONCE),
+    CALIBRATION_ID      ("04","09","ID Kalibracji",           "-",  "Calibration Identification Number",   ReadPriority.ONCE),
+    CVN                 ("06","09","Numer CVN",               "-",  "Calibration Verification Number",     ReadPriority.ONCE),
+    ESN                 ("08","09","Numer ESN",               "-",  "Engine Serial Number",                ReadPriority.ONCE),
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // TRYB 01 – PIDy 5F (status emisji)
-    // ═══════════════════════════════════════════════════════════════════════
-    EMISSION_REQUIREMENTS("5F","01","Wymagania emisji",       "-",  "Obsługiwane wymagania emisji",        ReadPriority.ONCE),
+    MON_O2_B1S1_RICH_TO_LEAN ("0101","06","O2 B1S1 R->L",     "-",  "Bogata na ubogą B1S1",               ReadPriority.LOW),
+    MON_O2_B1S1_LEAN_TO_RICH ("0102","06","O2 B1S1 L->R",     "-",  "Uboga na bogatą B1S1",               ReadPriority.LOW),
+    MON_O2_B2S1_RICH_TO_LEAN ("0501","06","O2 B2S1 R->L",     "-",  "Bogata na ubogą B2S1",               ReadPriority.LOW),
+    MON_O2_B2S1_LEAN_TO_RICH ("0502","06","O2 B2S1 L->R",     "-",  "Uboga na bogatą B2S1",               ReadPriority.LOW),
+    MON_O2_B1S2_MIN_V        ("0207","06","O2 B1S2 Min V",     "V",  "Minimalne napięcie B1S2",            ReadPriority.LOW),
+    MON_O2_B1S2_MAX_V        ("0208","06","O2 B1S2 Max V",     "V",  "Maksymalne napięcie B1S2",            ReadPriority.LOW),
+    MON_O2_B2S2_MIN_V        ("0607","06","O2 B2S2 Min V",     "V",  "Minimalne napięcie B2S2",            ReadPriority.LOW),
+    MON_O2_B2S2_MAX_V        ("0608","06","O2 B2S2 Max V",     "V",  "Maksymalne napięcie B2S2",            ReadPriority.LOW),
+    MON_O2_HEATER_B1S1       ("010B","06","Grzałka O2 B1S1",   "-",  "Test grzałki B1S1",                  ReadPriority.LOW),
+    MON_O2_HEATER_B1S2       ("020B","06","Grzałka O2 B1S2",   "-",  "Test grzałki B1S2",                  ReadPriority.LOW),
+    MON_O2_HEATER_B2S1       ("050B","06","Grzałka O2 B2S1",   "-",  "Test grzałki B2S1",                  ReadPriority.LOW),
+    MON_O2_HEATER_B2S2       ("060B","06","Grzałka O2 B2S2",   "-",  "Test grzałki B2S2",                  ReadPriority.LOW),
+    MON_EGR_FLOW_MIN         ("3101","06","EGR Przepływ Min", "-",  "Minimalny przepływ EGR",             ReadPriority.LOW),
+    MON_EGR_FLOW_MAX         ("3102","06","EGR Przepływ Max", "-",  "Maksymalny przepływ EGR",             ReadPriority.LOW),
+    MON_CATALYST_B1_TEMP     ("2101","06","Temp. Kata B1",     "°C", "Temperatura katalizatora Bank 1",    ReadPriority.LOW),
+    MON_CATALYST_B2_TEMP     ("2501","06","Temp. Kata B2",     "°C", "Temperatura katalizatora Bank 2",    ReadPriority.LOW),
+    MON_EVAP_PURGE_FLOW      ("3C01","06","EVAP Przedmuch",   "-",  "Przepływ przedmuchu EVAP",           ReadPriority.LOW),
+    MON_EVAP_LEAK_04         ("3C02","06","EVAP Wyciek .040", "-",  "Wyciek EVAP 1mm",                    ReadPriority.LOW),
+    MON_EVAP_LEAK_020        ("3D01","06","EVAP Wyciek .020", "-",  "Wyciek EVAP 0.5mm",                  ReadPriority.LOW),
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // TRYB 01 – PIDy 61–6B (silnik i napęd)
-    // ═══════════════════════════════════════════════════════════════════════
-    DRIVER_DEMAND_TORQUE("61","01","Żądany moment obr.",      "%",  "Żądany moment obrotowy przez kierowcę",ReadPriority.HIGH),
-    ACTUAL_TORQUE       ("62","01","Rzeczywisty moment",      "%",  "Rzeczywisty moment obrotowy silnika", ReadPriority.HIGH),
-    REFERENCE_TORQUE    ("63","01","Moment ref. silnika",    "Nm", "Referencyjny moment obrotowy silnika",ReadPriority.ONCE),
-    ENGINE_PERCENT_TORQUE("64","01","Momenty obr. %",         "%",  "Procentowe punkty momentu silnika",   ReadPriority.MEDIUM),
-    AUX_IO_SUPPORTED    ("65","01","Aux I/O obs.",            "-",  "Obsługiwane wejścia/wyjścia pomocnicze",ReadPriority.ONCE),
-    MASS_AIR_FLOW_SENSOR("66","01","Czujnik MAF (alt)",      "g/s","Wartość czujnika MAF alternatywna",   ReadPriority.HIGH),
-    ENGINE_COOLANT_TEMP2("67","01","Temp. chłodnicy 2",      "°C", "Czujniki temperatury chłodnicy",      ReadPriority.MEDIUM),
-    INTAKE_AIR_TEMP2    ("68","01","Temp. powietrza 2",      "°C", "Czujniki temperatury powietrza",      ReadPriority.MEDIUM),
-    COMMANDED_EGR2      ("69","01","EGR/VVT",                 "%",  "Polecenia EGR i VVT",                 ReadPriority.MEDIUM),
-    COMMANDED_DPF       ("6A","01","DPF/VGT",                 "%",  "Polecenia DPF i turbo zmiennej geometrii",ReadPriority.MEDIUM),
-    EXHAUST_GAS_TEMP_1  ("6B","01","Temp. spalin 1",         "°C", "Temperatura spalin bank 1",           ReadPriority.MEDIUM),
-    EXHAUST_GAS_TEMP_2  ("6C","01","Temp. spalin 2",         "°C", "Temperatura spalin bank 2",           ReadPriority.MEDIUM),
-    DPF_DIFFERENTIAL_PRESSURE("6D","01","Ciśnienie DPF",     "kPa","Ciśnienie różnicowe filtra DPF",      ReadPriority.MEDIUM),
-    ENGINE_OIL_TEMP2    ("6E","01","Temp. oleju 2",          "°C", "Temperatura oleju silnikowego (ext)", ReadPriority.MEDIUM),
-    FUEL_INJECTION_TIMING2("6F","01","Timing wtrysku 2",      "°",  "Polecenia aktywatora turbo",          ReadPriority.HIGH),
+    FF_ENGINE_RPM       ("0C","02","RPM (FF)",                "rpm","Obroty silnika (Freeze Frame)",       ReadPriority.LOW),
+    FF_VEHICLE_SPEED    ("0D","02","Prędkość (FF)",           "km/h","Prędkość (Freeze Frame)",            ReadPriority.LOW),
+    FF_ENGINE_LOAD      ("04","02","Obciążenie (FF)",         "%",  "Obciążenie (Freeze Frame)",           ReadPriority.LOW),
+    FF_COOLANT_TEMP     ("05","02","Temp. chłodnicy (FF)",    "°C", "Temp. chłodnicy (Freeze Frame)",      ReadPriority.LOW),
+    FF_THROTTLE_POS     ("11","02","Przepustnica (FF)",       "%",  "Przepustnica (Freeze Frame)",         ReadPriority.LOW),
+    FF_INTAKE_TEMP      ("0F","02","Temp. powietrza (FF)",    "°C", "Temp. powietrza (Freeze Frame)",      ReadPriority.LOW),
+    FF_MAF              ("10","02","MAF (FF)",                "g/s","MAF (Freeze Frame)",                  ReadPriority.LOW),
+    FF_SHORT_FUEL_TRIM_1("06","02","STFT 1 (FF)",             "%",  "STFT Bank 1 (Freeze Frame)",          ReadPriority.LOW),
+    FF_LONG_FUEL_TRIM_1 ("07","02","LTFT 1 (FF)",             "%",  "LTFT Bank 1 (Freeze Frame)",          ReadPriority.LOW),
+    FF_FUEL_PRESSURE    ("0A","02","Ciśn. paliwa (FF)",       "kPa","Ciśnienie paliwa (Freeze Frame)",     ReadPriority.LOW),
+    FF_INTAKE_PRESSURE  ("0B","02","Ciśn. dolotowe (FF)",     "kPa","Ciśnienie dolotowe (Freeze Frame)",   ReadPriority.LOW),
+    FF_TIMING_ADVANCE   ("0E","02","Zapłon (FF)",             "°",  "Wyprzedzenie zapłonu (Freeze Frame)", ReadPriority.LOW),
+    FF_FUEL_LEVEL       ("2F","02","Poziom paliwa (FF)",      "%",  "Poziom paliwa (Freeze Frame)",        ReadPriority.LOW),
+    FF_BARO_PRESSURE    ("33","02","Ciśn. baro (FF)",         "kPa","Ciśnienie barometryczne (FF)",        ReadPriority.LOW),
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // TRYB 01 – PIDy 70–7F (turbo, ciśnienie)
-    // ═══════════════════════════════════════════════════════════════════════
-    BOOST_PRESSURE      ("70","01","Ciśnienie turbo",         "kPa","Ciśnienie doładowania turbosprężarki",ReadPriority.HIGH),
-    VGT_STATUS          ("71","01","Status VGT",              "-",  "Status turbo zmiennej geometrii",     ReadPriority.MEDIUM),
-    WASTEGATE_STATUS    ("72","01","Status wastegate",         "-",  "Status zaworu wastegate",             ReadPriority.MEDIUM),
-    EXHAUST_PRESSURE    ("73","01","Ciśnienie spalin",        "kPa","Ciśnienie w układzie wydechowym",     ReadPriority.MEDIUM),
-    TURBO_RPM           ("74","01","RPM turbo",               "rpm","Obroty turbosprężarki",               ReadPriority.HIGH),
-    TURBO_TEMP_IN       ("75","01","Temp. wejścia turbo",    "°C", "Temperatura wejścia turbosprężarki",  ReadPriority.MEDIUM),
-    TURBO_TEMP_OUT      ("76","01","Temp. wyjścia turbo",    "°C", "Temperatura wyjścia turbosprężarki",  ReadPriority.MEDIUM),
-    INTERCOOLER_TEMP    ("77","01","Temp. intercoolera",     "°C", "Temperatura intercooolera",            ReadPriority.MEDIUM),
-    EGT_SENSOR_1        ("78","01","Czujnik EGT 1",          "°C", "Czujnik temperatury spalin nr 1",     ReadPriority.MEDIUM),
-    EGT_SENSOR_2        ("79","01","Czujnik EGT 2",          "°C", "Czujnik temperatury spalin nr 2",     ReadPriority.MEDIUM),
-    DPF_TEMP_IN         ("7A","01","Temp. wejścia DPF",      "°C", "Temperatura wejścia filtra DPF",      ReadPriority.MEDIUM),
-    DPF_TEMP_OUT        ("7B","01","Temp. wyjścia DPF",      "°C", "Temperatura wyjścia filtra DPF",      ReadPriority.MEDIUM),
-    DPF_STATUS          ("7C","01","Status DPF",              "-",  "Status i regeneracja filtra DPF",     ReadPriority.LOW),
-    NOX_NTE_STATUS      ("7D","01","Status NOx NTE",          "-",  "Status kontroli NOx NTE",             ReadPriority.LOW),
-    PM_NTE_STATUS       ("7E","01","Status PM NTE",           "-",  "Status kontroli cząstek NTE",         ReadPriority.LOW),
-    ENGINE_RUN_TIME_EXT ("7F","01","Czas pracy (ext)",       "s",  "Czas pracy silnika rozszerzony",      ReadPriority.MEDIUM),
+    CALC_ENGINE_POWER        ("VIRTUAL","00","Moc silnika",          "KM",   "Obliczona moc silnika",       ReadPriority.VIRTUAL),
+    CALC_TORQUE              ("VIRTUAL","00","Moment obrotowy",      "Nm",   "Rzeczywisty moment obrotowy", ReadPriority.VIRTUAL),
+    CALC_ENGINE_EFFICIENCY   ("VIRTUAL","00","Sprawność silnika",    "%",    "Całkowita sprawność silnika", ReadPriority.VIRTUAL),
+    CALC_WARMUP_SPEED        ("VIRTUAL","00","Szybk. nagrzewania",   "°C/s", "Prędkość nagrzewania silnika",ReadPriority.VIRTUAL),
+    CALC_MAX_IGN_RETARD      ("VIRTUAL","00","Max retardacja",       "°",    "Maksymalna retardacja zapłonu",ReadPriority.VIRTUAL),
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // TRYB 01 – PIDy 81–8C (EOBD/rozszerzenia)
-    // ═══════════════════════════════════════════════════════════════════════
-    ENGINE_RUN_TIME_AECD("81","01","Czas AECD",              "s",  "Czas pracy urządzeń kontroli emisji", ReadPriority.LOW),
-    ENGINE_RUN_TIME_AECD2("82","01","Czas AECD 2",           "s",  "Czas pracy urządzeń kontroli emisji 2",ReadPriority.LOW),
-    NOX_SENSOR          ("83","01","Czujnik NOx",             "ppm","Stężenie NOx",                        ReadPriority.MEDIUM),
-    MANIFOLD_SURFACE_TEMP("84","01","Temp. kolektora",       "°C", "Temperatura powierzchni kolektora",   ReadPriority.MEDIUM),
-    NOX_REAGENT_SYSTEM  ("85","01","System NOx reagent",      "%",  "System reagenta NOx (AdBlue/SCR)",    ReadPriority.LOW),
-    PM_SENSOR           ("86","01","Czujnik PM",              "mg/m3","Stężenie cząstek stałych",          ReadPriority.MEDIUM),
-    INTAKE_MANIFOLD_PRESSURE("87","01","Ciśnienie kolektora","kPa","Ciśnienie absolutne kolektora dolot.",ReadPriority.HIGH),
-    SCR_INDUCE_SYSTEM   ("88","01","System SCR",              "-",  "Status systemu SCR",                  ReadPriority.LOW),
-    AECD_11_15          ("89","01","AECD 11-15",              "-",  "Liczniki urządzeń kontroli emisji",   ReadPriority.LOW),
-    AECD_16_20          ("8A","01","AECD 16-20",              "-",  "Liczniki urządzeń kontroli emisji 2", ReadPriority.LOW),
-    DIESEL_AFTERTREAT   ("8B","01","Obróbka końcowa diesel", "-",  "Status systemu obróbki spalin diesel", ReadPriority.LOW),
-    O2_SENSOR_WIDE      ("8C","01","Szerokop. sonda O2",     "mA", "Szerokopasowy czujnik O2",            ReadPriority.HIGH),
+    CALC_TOTAL_FT_B1         ("VIRTUAL","00","Korekta sum. B1",      "%",    "Sumaryczna korekta paliwa B1",ReadPriority.VIRTUAL),
+    CALC_TOTAL_FT_B2         ("VIRTUAL","00","Korekta sum. B2",      "%",    "Sumaryczna korekta paliwa B2",ReadPriority.VIRTUAL),
+    CALC_FT_DIFF             ("VIRTUAL","00","Różnica korekt",       "%",    "Różnica korekt między bankami",ReadPriority.VIRTUAL),
+    CALC_ACTUAL_AFR          ("VIRTUAL","00","Rzeczywisty AFR",      "-",    "Rzeczywisty AFR (szerokopasmowy)",ReadPriority.VIRTUAL),
+    CALC_LAMBDA_ERROR        ("VIRTUAL","00","Błąd Lambda",          "λ",    "Błąd regulacji Lambda",       ReadPriority.VIRTUAL),
+    CALC_AFR_STECH_E85       ("VIRTUAL","00","AFR E85",              "-",    "AFR stechiometryczny dla E85",ReadPriority.VIRTUAL),
+    CALC_FT_ASYMMETRY        ("VIRTUAL","00","Asymetria korekt",     "%",    "Asymetria korekt paliwowych", ReadPriority.VIRTUAL),
+    CALC_FT_DELAY            ("VIRTUAL","00","Opóźnienie korekty",   "ms",   "Opóźnienie korekty paliwowej",ReadPriority.VIRTUAL),
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // TRYB 01 – PIDy A0–A6 (rozszerzenia SAE 2018+)
-    // ═══════════════════════════════════════════════════════════════════════
-    NOX_SENSOR_CORRECTED("A1","01","NOx koryg.",              "ppm","Skorygowane stężenie NOx",             ReadPriority.MEDIUM),
-    CYLINDER_FUEL_RATE  ("A2","01","Zużycie paliwa cyl.",    "mg/str","Dawka paliwa na cykl cylindra",     ReadPriority.HIGH),
-    EVAP_SYSTEM_VAPOR   ("A3","01","Ciśnienie EVAP sys.",    "Pa", "Ciśnienie układu EVAP",                ReadPriority.MEDIUM),
-    TRANSMISSION_ACTUAL_GEAR("A4","01","Bieg skrzyni",        "-",  "Aktualny bieg skrzyni biegów",        ReadPriority.MEDIUM),
-    DIESEL_EXHAUST_FLUID("A5","01","Płyn AdBlue",             "%",  "Poziom płynu AdBlue",                 ReadPriority.LOW),
-    ODOMETER            ("A6","01","Przebieg",                "km", "Przebieg całkowity pojazdu",           ReadPriority.LOW),
+    CALC_CYL_FUEL_RATE       ("VIRTUAL","00","Dawka na cylinder",    "mg/suw","Dawka paliwa na cylinder",    ReadPriority.VIRTUAL),
+    CALC_INJECTION_TIME      ("VIRTUAL","00","Czas wtrysku",         "ms",   "Czas wtrysku w ms",           ReadPriority.VIRTUAL),
+    CALC_FUEL_RAIL_PRES_REL  ("VIRTUAL","00","Ciśn. paliwa wzgl.",   "kPa",  "Ciśnienie paliwa względem MAP",ReadPriority.VIRTUAL),
+    CALC_PRES_DROP_AFTER_STOP("VIRTUAL","00","Spadek ciśn. stop",    "kPa/s","Spadek ciśnienia po zgaszeniu",ReadPriority.VIRTUAL),
+    CALC_PRES_VAC_RATIO      ("VIRTUAL","00","Stosunek P/V",         "-",    "Stosunek ciśnienia do próżni", ReadPriority.VIRTUAL),
+    CALC_CR_DROP_GRADIENT    ("VIRTUAL","00","Gradient spadku CR",   "MPa/s","Gradient spadku CR (diesel)",  ReadPriority.VIRTUAL),
+    CALC_CYL_FUEL_VAR        ("VIRTUAL","00","Wariancja dawki",      "mg/suw","Wariancja dawki na cylinder", ReadPriority.VIRTUAL),
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // TRYB 02 – Freeze Frame (zrzut danych w chwili błędu DTC)
-    // Tryb 02 ma identyczne PIDy jak tryb 01, ale zwraca wartości z chwili
-    // gdy ECU zapisało kod błędu. Dostępny tylko gdy jest aktywny DTC.
-    // ═══════════════════════════════════════════════════════════════════════
-    FF_ENGINE_RPM        ("0C","02","FF RPM",                 "rpm","[Freeze] Obroty silnika",              ReadPriority.ONCE),
-    FF_VEHICLE_SPEED     ("0D","02","FF Prędkość",            "km/h","[Freeze] Prędkość pojazdu",            ReadPriority.ONCE),
-    FF_ENGINE_LOAD       ("04","02","FF Obciążenie",          "%",  "[Freeze] Obciążenie silnika",          ReadPriority.ONCE),
-    FF_COOLANT_TEMP      ("05","02","FF Temp. chłodnicy",     "°C", "[Freeze] Temperatura chłodnicy",       ReadPriority.ONCE),
-    FF_THROTTLE_POS      ("11","02","FF Przepustnica",        "%",  "[Freeze] Pozycja przepustnicy",        ReadPriority.ONCE),
-    FF_INTAKE_TEMP       ("0F","02","FF Temp. powietrza",     "°C", "[Freeze] Temp. powietrza na wlocie",   ReadPriority.ONCE),
-    FF_MAF               ("10","02","FF Przepływ MAF",        "g/s","[Freeze] Masowy przepływ powietrza",   ReadPriority.ONCE),
-    FF_SHORT_FUEL_TRIM_1 ("06","02","FF STFT bank 1",         "%",  "[Freeze] Krótkoterm. korekta paliwa",  ReadPriority.ONCE),
-    FF_LONG_FUEL_TRIM_1  ("07","02","FF LTFT bank 1",         "%",  "[Freeze] Długoterm. korekta paliwa",   ReadPriority.ONCE),
-    FF_FUEL_PRESSURE     ("0A","02","FF Ciśnienie paliwa",    "kPa","[Freeze] Ciśnienie w układzie paliwowym",ReadPriority.ONCE),
-    FF_INTAKE_PRESSURE   ("0B","02","FF Ciśnienie dolotowe",  "kPa","[Freeze] Ciśnienie w kolektorze",      ReadPriority.ONCE),
-    FF_TIMING_ADVANCE    ("0E","02","FF Wyprzedzenie zapłonu","°",  "[Freeze] Wyprzedzenie zapłonu",        ReadPriority.ONCE),
-    FF_FUEL_LEVEL        ("2F","02","FF Poziom paliwa",       "%",  "[Freeze] Poziom paliwa w zbiorniku",   ReadPriority.ONCE),
-    FF_BARO_PRESSURE     ("33","02","FF Ciśnienie atmosf.",   "kPa","[Freeze] Ciśnienie atmosferyczne",     ReadPriority.ONCE),
+    CALC_KNOCK_FREQ          ("VIRTUAL","00","Częst. stuków",        "1/min","Częstotliwość korekcji stuk.",ReadPriority.VIRTUAL),
+    CALC_RETARD_RECOVERY     ("VIRTUAL","00","Szybk. powrotu kąta",  "°/s",  "Szybkość powrotu kąta zapłonu",ReadPriority.VIRTUAL),
+    CALC_IGN_DIFF            ("VIRTUAL","00","Różnica zapłonu B1/B2","°",    "Różnica kąta między bankami",  ReadPriority.VIRTUAL),
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // TRYB 06 – Wyniki testów komponentów (On-Board Monitor Tests)
-    // ECU wykonuje cykliczne testy czujników i zapisuje wyniki.
-    // Każdy test ma ID (TID), wartość zmierzoną, min i max.
-    // Dostępne TIDy zależą od producenta – poniższe są standardowe SAE.
-    // ═══════════════════════════════════════════════════════════════════════
-    MON_O2_B1S1_RICH_TO_LEAN ("01","06","Test O2 B1S1 R→L",   "V",  "[Monitor] Próg O2 bank1 sensor1 bogaty→ubogi",    ReadPriority.ONCE),
-    MON_O2_B1S1_LEAN_TO_RICH ("02","06","Test O2 B1S1 L→R",   "V",  "[Monitor] Próg O2 bank1 sensor1 ubogi→bogaty",    ReadPriority.ONCE),
-    MON_O2_B2S1_RICH_TO_LEAN ("03","06","Test O2 B2S1 R→L",   "V",  "[Monitor] Próg O2 bank2 sensor1 bogaty→ubogi",    ReadPriority.ONCE),
-    MON_O2_B2S1_LEAN_TO_RICH ("04","06","Test O2 B2S1 L→R",   "V",  "[Monitor] Próg O2 bank2 sensor1 ubogi→bogaty",    ReadPriority.ONCE),
-    MON_O2_B1S2_MIN_V        ("05","06","Test O2 B1S2 min V",  "V",  "[Monitor] Min napięcie O2 bank1 sensor2",         ReadPriority.ONCE),
-    MON_O2_B1S2_MAX_V        ("06","06","Test O2 B1S2 max V",  "V",  "[Monitor] Max napięcie O2 bank1 sensor2",         ReadPriority.ONCE),
-    MON_O2_B2S2_MIN_V        ("07","06","Test O2 B2S2 min V",  "V",  "[Monitor] Min napięcie O2 bank2 sensor2",         ReadPriority.ONCE),
-    MON_O2_B2S2_MAX_V        ("08","06","Test O2 B2S2 max V",  "V",  "[Monitor] Max napięcie O2 bank2 sensor2",         ReadPriority.ONCE),
-    MON_EGR_FLOW_MIN         ("31","06","Test EGR min",         "%",  "[Monitor] Min przepływ EGR",                      ReadPriority.ONCE),
-    MON_EGR_FLOW_MAX         ("32","06","Test EGR max",         "%",  "[Monitor] Max przepływ EGR",                      ReadPriority.ONCE),
-    MON_CATALYST_B1_TEMP     ("21","06","Test kat. B1 temp.",   "°C", "[Monitor] Temperatura katalizatora bank1",        ReadPriority.ONCE),
-    MON_CATALYST_B2_TEMP     ("22","06","Test kat. B2 temp.",   "°C", "[Monitor] Temperatura katalizatora bank2",        ReadPriority.ONCE),
-    MON_EVAP_PURGE_FLOW      ("41","06","Test EVAP przepływ",   "%",  "[Monitor] Przepływ zaworu oczyszczania EVAP",     ReadPriority.ONCE),
-    MON_EVAP_LEAK_04         ("42","06","Test EVAP szczelność", "Pa", "[Monitor] Test szczelności układu EVAP 0.040\"",  ReadPriority.ONCE),
-    MON_EVAP_LEAK_020        ("43","06","Test EVAP szczelność 2","Pa","[Monitor] Test szczelności układu EVAP 0.020\"",  ReadPriority.ONCE),
-    MON_O2_HEATER_B1S1       ("51","06","Test grzejnika O2 B1S1","A", "[Monitor] Prąd grzejnika sondy O2 bank1 sensor1",ReadPriority.ONCE),
-    MON_O2_HEATER_B1S2       ("52","06","Test grzejnika O2 B1S2","A", "[Monitor] Prąd grzejnika sondy O2 bank1 sensor2",ReadPriority.ONCE),
-    MON_O2_HEATER_B2S1       ("53","06","Test grzejnika O2 B2S1","A", "[Monitor] Prąd grzejnika sondy O2 bank2 sensor1",ReadPriority.ONCE),
-    MON_O2_HEATER_B2S2       ("54","06","Test grzejnika O2 B2S2","A", "[Monitor] Prąd grzejnika sondy O2 bank2 sensor2",ReadPriority.ONCE),
+    CALC_CAT_EFFICIENCY      ("VIRTUAL","00","Sprawność kata",      "%",    "Switch Ratio (sprawność kata)",ReadPriority.VIRTUAL),
+    CALC_MAX_CAT_TEMP        ("VIRTUAL","00","Max temp. kata",       "°C",   "Max temperatura katalizatora",ReadPriority.VIRTUAL),
+    CALC_CAT_TEMP_RATIO      ("VIRTUAL","00","Stosunek temp. kata",  "-",    "Stosunek temp. przed/za katem",ReadPriority.VIRTUAL),
+    CALC_POST_CAT_O2_DELAY   ("VIRTUAL","00","Opóźn. sondy za kat.","ms",   "Opóźnienie sondy za katem",   ReadPriority.VIRTUAL),
+    CALC_O2_DAMPING          ("VIRTUAL","00","Wsp. tłumienia O2",    "-",    "Współczynnik tłumienia sondy",ReadPriority.VIRTUAL),
+    CALC_CO2_EMISSION        ("VIRTUAL","00","Emisja CO₂",           "g/km", "Emisja CO₂ (benzyna)",        ReadPriority.VIRTUAL),
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // TRYB 09 – informacje o pojeździe (wszystkie ONCE)
-    // ═══════════════════════════════════════════════════════════════════════
-    VIN                 ("02","09","VIN",                     "-",  "Numer identyfikacyjny pojazdu",        ReadPriority.ONCE),
-    CALIBRATION_ID      ("04","09","ID kalibracji ECU",       "-",  "ID kalibracji oprogramowania ECU",     ReadPriority.ONCE),
-    CVN                 ("06","09","CVN",                     "-",  "Numer weryfikacji kalibracji",         ReadPriority.ONCE),
-    PERF_TRACKING       ("08","09","Śledzenie wydajności",    "-",  "Śledzenie wydajności OBD",             ReadPriority.ONCE),
-    ECU_NAME            ("0A","09","Nazwa ECU",               "-",  "Nazwa modułu sterującego",             ReadPriority.ONCE),
-    ESN                 ("0D","09","Numer seryjny silnika",   "-",  "Numer seryjny silnika (ESN)",          ReadPriority.ONCE),
-    ;
+    CALC_VOLTAGE_DROP_START  ("VIRTUAL","00","Spadek napięcia start","V",    "Spadek napięcia podczas startu",ReadPriority.VIRTUAL),
+    CALC_BATTERY_SOC         ("VIRTUAL","00","Stan akumulatora",    "%",    "Stan naładowania akumulatora",ReadPriority.VIRTUAL),
+    CALC_CHARGE_TIME         ("VIRTUAL","00","Czas ładowania",      "s",    "Czas ładowania po rozruchu",  ReadPriority.VIRTUAL),
 
+    CALC_FUEL_RANGE          ("VIRTUAL","00","Zasięg na paliwie",   "km",   "Zasięg na paliwie",            ReadPriority.VIRTUAL),
+    CALC_AVG_FUEL_CONS       ("VIRTUAL","00","Spalanie średnie",    "L/100km","Spalanie średnie z trasy",    ReadPriority.VIRTUAL),
+    CALC_DIST_FROM_REFUEL    ("VIRTUAL","00","Dyst. od tankowania",  "km",   "Dystans od ostatniego tank.", ReadPriority.VIRTUAL),
+
+    CALC_TEMP_DIFF_COOLANT   ("VIRTUAL","00","Różnica temp. chłodn.","°C",   "Różnica temperatur między czuj.",ReadPriority.VIRTUAL),
+    CALC_TEMP_FLUCTUATION    ("VIRTUAL","00","Wahania temperatury",  "°C",   "Wahania temperatury płynu",    ReadPriority.VIRTUAL),
+    // 1.9 DPF
+    CALC_DPF_CLOG            ("VIRTUAL","00","Zatkanie DPF",        "kPa/(g/s)","Wskaźnik zatkania DPF",     ReadPriority.VIRTUAL),
+
+    CALC_EVAP_LEAK_TEST      ("VIRTUAL","00","Test EVAP",           "%",    "Test szczelności EVAP (zasys.)",ReadPriority.VIRTUAL),
+    CALC_EVAP_PRES_REL       ("VIRTUAL","00","Ciśn. EVAP wzgl.",    "Pa",   "Ciśnienie EVAP względne",     ReadPriority.VIRTUAL),
+
+    CALC_AIR_DENSITY         ("VIRTUAL","00","Gęstość powietrza",   "kg/m³","Gęstość powietrza dolotowego",ReadPriority.VIRTUAL),
+    CALC_THEORETICAL_MAF     ("VIRTUAL","00","Teoretyczny MAF",     "g/s",  "Teoretyczny MAF (VE=100%)",   ReadPriority.VIRTUAL),
+    CALC_MAF_DIFF            ("VIRTUAL","00","Różnica MAF",         "g/s",  "Różnica MAF (rzecz. - teor.)",ReadPriority.VIRTUAL),
+    CALC_VOLUMETRIC_AIR_FLOW ("VIRTUAL","00","Obj. przepływ pow.",  "m³/h", "Objętościowy przepływ pow.",  ReadPriority.VIRTUAL),
+    CALC_MAP_BARO_RATIO      ("VIRTUAL","00","MAP/BARO vs RPM",     "-",    "Stosunek MAP/BARO vs RPM",    ReadPriority.VIRTUAL),
+    CALC_MAP_GRADIENT        ("VIRTUAL","00","Gradient MAP",        "kPa/s","Gradient narastania MAP",    ReadPriority.VIRTUAL),
+    CALC_MAP_HYSTERESIS      ("VIRTUAL","00","Histereza MAP",       "kPa",  "Histereza MAP",               ReadPriority.VIRTUAL),
+    CALC_MAF_MAP_RATIO       ("VIRTUAL","00","Stosunek MAF/MAP",    "g/s/kPa","Stosunek MAF/MAP",          ReadPriority.VIRTUAL),
+    CALC_MAF_RPM_CORR        ("VIRTUAL","00","Korelacja MAF/RPM",   "-",    "Korelacja MAF vs RPM",        ReadPriority.VIRTUAL),
+
+    CALC_BOOST_KPA           ("VIRTUAL","00","Boost (kPa)",         "kPa",  "Ciśnienie doładowania (kPa)", ReadPriority.VIRTUAL),
+    CALC_BOOST_BAR           ("VIRTUAL","00","Boost (bar)",         "bar",  "Boost w bar",                 ReadPriority.VIRTUAL),
+    CALC_TURBO_LAG           ("VIRTUAL","00","Turbo Lag",           "ms",   "Turbo Lag",                   ReadPriority.VIRTUAL),
+    CALC_BOOST_OVERSHOOT     ("VIRTUAL","00","Przeregul. boost",    "kPa",  "Przeregulowanie boost",       ReadPriority.VIRTUAL),
+    CALC_BOOST_RISE_TIME     ("VIRTUAL","00","Czas narastania",     "ms",   "Stała czasowa narastania",    ReadPriority.VIRTUAL),
+    CALC_BOOST_HYSTERESIS    ("VIRTUAL","00","Histereza boost",     "kPa",  "Histereza boost",             ReadPriority.VIRTUAL),
+    CALC_BOOST_DROP_REDLINE  ("VIRTUAL","00","Spadek boost",        "%",    "Spadek boost przy redline",   ReadPriority.VIRTUAL),
+
+    CALC_O2_AMPLITUDE        ("VIRTUAL","00","Amplituda O2",        "V",    "Amplituda sygnału sondy O2",  ReadPriority.VIRTUAL),
+    CALC_O2_FREQ             ("VIRTUAL","00","Częstotliwość O2",    "Hz",   "Częstotliwość przełączania",  ReadPriority.VIRTUAL),
+    CALC_O2_RISE_SPEED       ("VIRTUAL","00","Szybk. narastania O2","V/ms", "Prędkość narastania napięcia",ReadPriority.VIRTUAL),
+
+    CALC_EGR_FLOW_ACTUAL     ("VIRTUAL","00","Rzecz. przepływ EGR", "g/s",  "Rzeczywisty przepływ EGR",    ReadPriority.VIRTUAL),
+    CALC_EGR_EFFICIENCY      ("VIRTUAL","00","Sprawność EGR",       "%",    "Sprawność EGR",               ReadPriority.VIRTUAL),
+    CALC_INTERCOOLER_EFF     ("VIRTUAL","00","Sprawność IC",        "%",    "Sprawność intercoolera",      ReadPriority.VIRTUAL),
+    CALC_COMPRESSOR_EFF      ("VIRTUAL","00","Wydajność sprężarki", "g/s/kPa","Wydajność sprężarki",        ReadPriority.VIRTUAL),
+    CALC_TURBO_RPM_PCT       ("VIRTUAL","00","% max RPM turbo",    "%",    "% max obrotów turbiny",       ReadPriority.VIRTUAL),
+
+    CALC_ACCEL_ANGULAR       ("VIRTUAL","00","Przysp. kątowe",      "obr/s²","Przyspieszenie kątowe wału",  ReadPriority.VIRTUAL),
+    CALC_ACCEL_VAR           ("VIRTUAL","00","Wariancja przysp.",   "obr/s²","Wariancja przyspieszenia",    ReadPriority.VIRTUAL),
+    CALC_RPM_MAP_CORR        ("VIRTUAL","00","Korelacja RPM/MAP",   "-",    "Korelacja RPM z MAP",         ReadPriority.VIRTUAL),
+
+    CALC_INSTANT_FUEL_RATE   ("VIRTUAL","00","Spalanie (FR)",       "L/100km","Spalanie z FUEL_RATE",      ReadPriority.VIRTUAL),
+    CALC_INSTANT_FUEL_MAF_G  ("VIRTUAL","00","Spalanie (MAF-G)",    "L/100km","Spalanie z MAF (benzyna)",    ReadPriority.VIRTUAL),
+    CALC_INSTANT_FUEL_MAF_D  ("VIRTUAL","00","Spalanie (MAF-D)",    "L/100km","Spalanie z MAF (diesel)",     ReadPriority.VIRTUAL),
+    CALC_CO2_EMISSION_G      ("VIRTUAL","00","Emisja CO₂ (G)",      "g/km", "Emisja CO₂ (benzyna)",        ReadPriority.VIRTUAL),
+    CALC_CO2_EMISSION_D      ("VIRTUAL","00","Emisja CO₂ (D)",      "g/km", "Emisja CO₂ (diesel)",         ReadPriority.VIRTUAL),
+
+    CALC_EXHAUST_MASS_FLOW   ("VIRTUAL","00","Masowy przepływ spalin","g/s", "Masowy przepływ spalin",      ReadPriority.VIRTUAL),
+    CALC_EXHAUST_VOL_FLOW    ("VIRTUAL","00","Obj. przepływ spalin", "m³/h", "Objętościowy przepływ spalin",ReadPriority.VIRTUAL),
+
+    CALC_TCC_SLIP            ("VIRTUAL","00","Poślizg konwertera",  "rpm",  "Poślizg konwertera momentu",  ReadPriority.VIRTUAL),
+    CALC_CLUTCH_SLIP         ("VIRTUAL","00","Poślizg sprzęgła",    "%",    "Wskaźnik poślizgu sprzęgła",  ReadPriority.VIRTUAL),
+    CALC_GEAR_CHANGE_TIME    ("VIRTUAL","00","Czas zmiany biegu",   "ms",   "Czas zmiany biegu",           ReadPriority.VIRTUAL),
+    CALC_RPM_VAR_CRUISE      ("VIRTUAL","00","Wariancja RPM",       "rpm",  "Wariancja RPM na tempomacie", ReadPriority.VIRTUAL),
+
+    CALC_ALTERNATOR_EFF      ("VIRTUAL","00","Sprawność altern.",   "%",    "Sprawność alternatora",       ReadPriority.VIRTUAL),
+    CALC_VOLTAGE_TEMP_COEFF  ("VIRTUAL","00","Wsp. temp. napięcia", "V/°C", "Wsp. temperaturowy napięcia", ReadPriority.VIRTUAL),
+
+    CALC_COMPRESSION_INDEX   ("VIRTUAL","00","Wskaźnik kompresji",  "rpm/V","Wskaźnik kompresji",          ReadPriority.VIRTUAL),
+    CALC_RPM_START_VAR       ("VIRTUAL","00","Zmienność RPM rozr.", "rpm",  "Zmienność RPM podczas rozr.", ReadPriority.VIRTUAL),
+
+    CALC_THROTTLE_RESPONSE   ("VIRTUAL","00","Odp. na przepust.",   "ms",   "Odpowiedź na skok przepust.", ReadPriority.VIRTUAL),
+    CALC_RPM_OVERSHOOT       ("VIRTUAL","00","Przeregulowanie RPM", "rpm",  "Przeregulowanie RPM przy sk.",ReadPriority.VIRTUAL),
+    CALC_MAP_DELAY           ("VIRTUAL","00","Opóźnienie MAP",      "ms",   "Opóźnienie reakcji MAP",      ReadPriority.VIRTUAL),
+
+    CALC_AIR_FLOW_CFM        ("VIRTUAL","00","Przepływ (CFM)",      "CFM",  "Przepływ powietrza (CFM)",    ReadPriority.VIRTUAL),
+    CALC_MAF_DERIVATIVE      ("VIRTUAL","00","Pochodna MAF",        "g/s²", "Pochodna MAF po czasie",      ReadPriority.VIRTUAL),
+    CALC_THROTTLE_SPEED      ("VIRTUAL","00","Szybk. otwarcia przep.", "%/s", "Szybkość otwierania przep.", ReadPriority.VIRTUAL),
+    CALC_THROTTLE_ERROR      ("VIRTUAL","00","Błąd przepustnicy",   "%",    "Błąd pozycjonowania przep.",  ReadPriority.VIRTUAL),
+
+    CALC_FAN_DUTY_CYCLE      ("VIRTUAL","00","Cykl wentylatora",    "%",    "Cykl pracy wentylatora",      ReadPriority.VIRTUAL),
+    CALC_TEMP_LOAD_RATIO     ("VIRTUAL","00","Temp/Obciążenie",     "°C/%", "Stosunek temp. do obciąż.",   ReadPriority.VIRTUAL),
+
+    CALC_CAT_WARMUP_TIME     ("VIRTUAL","00","Czas nagrzew. kata",  "s",    "Czas nagrzewania kataliz.",   ReadPriority.VIRTUAL),
+    CALC_CAT_COOL_SPEED      ("VIRTUAL","00","Szybk. stygnięcia kat.","°C/s","Szybkość stygnięcia kata",   ReadPriority.VIRTUAL),
+
+    CALC_OIL_WEAR_INDEX      ("VIRTUAL","00","Wskaźnik zuż. oleju", "°C/min","Wskaźnik zużycia oleju",     ReadPriority.VIRTUAL),
+    CALC_OIL_LIFE_RATIO      ("VIRTUAL","00","Przepracowanie oleju","-",    "Przepracowanie oleju",        ReadPriority.VIRTUAL),
+    CALC_OIL_COOLER_EFF      ("VIRTUAL","00","Efekt. chłodn. oleju","-",    "Efektywność wymiennika oleju",ReadPriority.VIRTUAL),
+    CALC_THROTTLE_SOOT       ("VIRTUAL","00","Zabrudzenie przep.",  "-",    "Wskaźnik zabrudzenia przep.", ReadPriority.VIRTUAL),
+
+    CALC_LTFT_VAR_RPM        ("VIRTUAL","00","Wariancja LTFT",      "%",    "Wariancja LTFT względem RPM", ReadPriority.VIRTUAL),
+    CALC_O2_ENTROPY          ("VIRTUAL","00","Entropia O2",         "bit",  "Entropia sygnału sondy O2",   ReadPriority.VIRTUAL),
+    CALC_FUEL_MAF_RATIO      ("VIRTUAL","00","Stosunek paliwo/pow.","mg/mg","Stosunek paliwo/powietrze",   ReadPriority.VIRTUAL),
+    CALC_CUMULATIVE_FUEL_DIFF("VIRTUAL","00","Skumul. różnica paliwa","mg/suw","Skumulowana różnica paliwa",ReadPriority.VIRTUAL),
+
+    CALC_VOL_AIR_FLOW2       ("VIRTUAL","00","Obj. przepływ pow. 2","m³/h", "Objętościowy przepływ pow.",  ReadPriority.VIRTUAL),
+    CALC_CFM_FLOW2           ("VIRTUAL","00","Przepływ (CFM) 2",    "CFM",  "Przepływ powietrza (CFM)",    ReadPriority.VIRTUAL),
+    CALC_THEOR_MAF2          ("VIRTUAL","00","Teoretyczny MAF 2",   "g/s",  "Teoretyczny MAF (VE=100%)",   ReadPriority.VIRTUAL),
+    CALC_MAF_DIFF2           ("VIRTUAL","00","Różnica MAF 2",       "g/s",  "Różnica MAF (rzecz. - teor.)",ReadPriority.VIRTUAL),
+    CALC_CYL_FUEL2           ("VIRTUAL","00","Dawka na cylinder 2", "mg/suw","Dawka paliwa na cylinder",    ReadPriority.VIRTUAL),
+    CALC_INJ_TIME2           ("VIRTUAL","00","Czas wtrysku 2",      "ms",   "Czas wtrysku w ms",           ReadPriority.VIRTUAL),
+    CALC_CO2_G2              ("VIRTUAL","00","Emisja CO₂ (G) 2",    "g/km", "Emisja CO₂ (benzyna)",        ReadPriority.VIRTUAL),
+    CALC_CO2_D2              ("VIRTUAL","00","Emisja CO₂ (D) 2",    "g/km", "Emisja CO₂ (diesel)",         ReadPriority.VIRTUAL),
+    CALC_EXH_VOL2            ("VIRTUAL","00","Obj. przepływ spal. 2","m³/h", "Objętościowy przepływ spalin",ReadPriority.VIRTUAL),
+    CALC_DIST_REFUEL2        ("VIRTUAL","00","Dystans od tank. 2",  "km",   "Dystans od ostatniego tank.", ReadPriority.VIRTUAL)
 }
 
 enum class ObdCategory(val displayName: String, val pids: List<ObdCommand>) {
     ENGINE("Silnik", listOf(
+        ObdCommand.CALC_ENGINE_POWER, ObdCommand.CALC_TORQUE, ObdCommand.CALC_ENGINE_EFFICIENCY,
+        ObdCommand.CALC_WARMUP_SPEED, ObdCommand.CALC_MAX_IGN_RETARD, ObdCommand.CALC_KNOCK_FREQ,
+        ObdCommand.CALC_RETARD_RECOVERY, ObdCommand.CALC_IGN_DIFF, ObdCommand.CALC_TEMP_DIFF_COOLANT,
+        ObdCommand.CALC_TEMP_FLUCTUATION, ObdCommand.CALC_ACCEL_ANGULAR, ObdCommand.CALC_ACCEL_VAR,
+        ObdCommand.CALC_RPM_MAP_CORR, ObdCommand.CALC_COMPRESSION_INDEX, ObdCommand.CALC_RPM_START_VAR,
+        ObdCommand.CALC_THROTTLE_RESPONSE, ObdCommand.CALC_RPM_OVERSHOOT, ObdCommand.CALC_MAP_DELAY,
+        ObdCommand.CALC_FAN_DUTY_CYCLE, ObdCommand.CALC_TEMP_LOAD_RATIO, ObdCommand.CALC_OIL_WEAR_INDEX,
+        ObdCommand.CALC_OIL_LIFE_RATIO, ObdCommand.CALC_OIL_COOLER_EFF, ObdCommand.CALC_THROTTLE_SOOT,
         ObdCommand.ENGINE_RPM, ObdCommand.ENGINE_LOAD, ObdCommand.COOLANT_TEMP,
         ObdCommand.ENGINE_OIL_TEMP, ObdCommand.TIMING_ADVANCE, ObdCommand.RUN_TIME,
-        ObdCommand.DRIVER_DEMAND_TORQUE, ObdCommand.ACTUAL_TORQUE, ObdCommand.REFERENCE_TORQUE
+        ObdCommand.DRIVER_DEMAND_TORQUE, ObdCommand.ACTUAL_TORQUE, ObdCommand.REFERENCE_TORQUE,
+        ObdCommand.ENGINE_COOLANT_TEMP2
     )),
-    MOTION("Ruch", listOf(
+    MOTION("Ruch i Układ napędowy", listOf(
         ObdCommand.VEHICLE_SPEED, ObdCommand.THROTTLE_POS, ObdCommand.RELATIVE_THROTTLE_POS,
         ObdCommand.ABSOLUTE_LOAD, ObdCommand.ACCELERATOR_POS_D, ObdCommand.ACCELERATOR_POS_REL,
-        ObdCommand.TRANSMISSION_ACTUAL_GEAR
+        ObdCommand.TRANSMISSION_ACTUAL_GEAR, ObdCommand.CALC_TCC_SLIP, ObdCommand.CALC_CLUTCH_SLIP,
+        ObdCommand.CALC_GEAR_CHANGE_TIME, ObdCommand.CALC_RPM_VAR_CRUISE
     )),
-    FUEL("Paliwo", listOf(
+    FUEL("Paliwo i Mieszanka", listOf(
+        ObdCommand.CALC_TOTAL_FT_B1, ObdCommand.CALC_TOTAL_FT_B2, ObdCommand.CALC_FT_DIFF,
+        ObdCommand.CALC_ACTUAL_AFR, ObdCommand.CALC_LAMBDA_ERROR, ObdCommand.CALC_AFR_STECH_E85,
+        ObdCommand.CALC_FT_ASYMMETRY, ObdCommand.CALC_FT_DELAY, ObdCommand.CALC_CYL_FUEL_RATE,
+        ObdCommand.CALC_INJECTION_TIME, ObdCommand.CALC_FUEL_RAIL_PRES_REL, ObdCommand.CALC_PRES_DROP_AFTER_STOP,
+        ObdCommand.CALC_PRES_VAC_RATIO, ObdCommand.CALC_CR_DROP_GRADIENT, ObdCommand.CALC_CYL_FUEL_VAR,
+        ObdCommand.CALC_FUEL_RANGE, ObdCommand.CALC_AVG_FUEL_CONS, ObdCommand.CALC_DIST_FROM_REFUEL,
+        ObdCommand.CALC_INSTANT_FUEL_RATE, ObdCommand.CALC_INSTANT_FUEL_MAF_G, ObdCommand.CALC_INSTANT_FUEL_MAF_D,
+        ObdCommand.CALC_CO2_EMISSION_G, ObdCommand.CALC_CO2_EMISSION_D, ObdCommand.CALC_LTFT_VAR_RPM,
+        ObdCommand.CALC_FUEL_MAF_RATIO, ObdCommand.CALC_CUMULATIVE_FUEL_DIFF, ObdCommand.CALC_CYL_FUEL2,
+        ObdCommand.CALC_INJ_TIME2, ObdCommand.CALC_CO2_G2, ObdCommand.CALC_CO2_D2, ObdCommand.CALC_DIST_REFUEL2,
         ObdCommand.FUEL_LEVEL, ObdCommand.FUEL_RATE, ObdCommand.FUEL_PRESSURE,
         ObdCommand.FUEL_RAIL_PRESSURE_DIRECT, ObdCommand.FUEL_RAIL_PRESSURE_ABS,
         ObdCommand.SHORT_FUEL_TRIM_1, ObdCommand.LONG_FUEL_TRIM_1,
@@ -290,33 +399,53 @@ enum class ObdCategory(val displayName: String, val pids: List<ObdCommand>) {
         ObdCommand.FUEL_INJECT_TIMING, ObdCommand.COMMANDED_EQUIV_RATIO,
         ObdCommand.ETHANOL_PERCENT, ObdCommand.FUEL_TYPE, ObdCommand.CYLINDER_FUEL_RATE
     )),
-    AIR("Powietrze", listOf(
+    AIR("Powietrze i Dolot", listOf(
         ObdCommand.MAF, ObdCommand.INTAKE_PRESSURE, ObdCommand.BARO_PRESSURE,
-        ObdCommand.INTAKE_TEMP, ObdCommand.AMBIENT_AIR_TEMP, ObdCommand.INTAKE_MANIFOLD_PRESSURE
+        ObdCommand.INTAKE_TEMP, ObdCommand.AMBIENT_AIR_TEMP, ObdCommand.INTAKE_MANIFOLD_PRESSURE,
+        ObdCommand.CALC_AIR_DENSITY, ObdCommand.CALC_THEORETICAL_MAF, ObdCommand.CALC_MAF_DIFF,
+        ObdCommand.CALC_VOLUMETRIC_AIR_FLOW, ObdCommand.CALC_MAP_BARO_RATIO, ObdCommand.CALC_MAP_GRADIENT,
+        ObdCommand.CALC_MAP_HYSTERESIS, ObdCommand.CALC_MAF_MAP_RATIO, ObdCommand.CALC_MAF_RPM_CORR,
+        ObdCommand.CALC_AIR_FLOW_CFM, ObdCommand.CALC_MAF_DERIVATIVE, ObdCommand.CALC_THROTTLE_SPEED,
+        ObdCommand.CALC_THROTTLE_ERROR, ObdCommand.CALC_VOL_AIR_FLOW2, ObdCommand.CALC_CFM_FLOW2,
+        ObdCommand.CALC_THEOR_MAF2, ObdCommand.CALC_MAF_DIFF2
     )),
     OXYGEN("Tlen / Lambda", listOf(
         ObdCommand.O2_SENSOR_1_1, ObdCommand.O2_SENSOR_1_2,
         ObdCommand.O2_SENSOR_2_1, ObdCommand.O2_SENSOR_2_2,
         ObdCommand.O2_S1_WR_CURRENT, ObdCommand.O2_S2_WR_CURRENT,
-        ObdCommand.O2_S1_WR_LAMBDA, ObdCommand.O2_S2_WR_LAMBDA
+        ObdCommand.O2_S1_WR_LAMBDA, ObdCommand.O2_S2_WR_LAMBDA,
+        ObdCommand.CALC_O2_AMPLITUDE, ObdCommand.CALC_O2_FREQ, ObdCommand.CALC_O2_RISE_SPEED,
+        ObdCommand.CALC_O2_ENTROPY
     )),
-    CATALYST("Katalizator / Spaliny", listOf(
+    CATALYST("Katalizator i Spaliny", listOf(
         ObdCommand.CATALYST_TEMP_B1S1, ObdCommand.CATALYST_TEMP_B2S1,
         ObdCommand.CATALYST_TEMP_B1S2, ObdCommand.CATALYST_TEMP_B2S2,
         ObdCommand.EXHAUST_GAS_TEMP_1, ObdCommand.EXHAUST_GAS_TEMP_2,
-        ObdCommand.NOX_SENSOR, ObdCommand.PM_SENSOR
+        ObdCommand.NOX_SENSOR, ObdCommand.PM_SENSOR,
+        ObdCommand.CALC_CAT_EFFICIENCY, ObdCommand.CALC_MAX_CAT_TEMP, ObdCommand.CALC_CAT_TEMP_RATIO,
+        ObdCommand.CALC_POST_CAT_O2_DELAY, ObdCommand.CALC_O2_DAMPING, ObdCommand.CALC_CO2_EMISSION,
+        ObdCommand.CALC_EXHAUST_MASS_FLOW, ObdCommand.CALC_EXHAUST_VOL_FLOW, ObdCommand.CALC_CAT_WARMUP_TIME,
+        ObdCommand.CALC_CAT_COOL_SPEED, ObdCommand.CALC_EXH_VOL2
     )),
-    TURBO("Turbo / DPF", listOf(
+    TURBO("Turbo / DPF / EGR", listOf(
         ObdCommand.BOOST_PRESSURE, ObdCommand.TURBO_RPM,
         ObdCommand.TURBO_TEMP_IN, ObdCommand.TURBO_TEMP_OUT,
         ObdCommand.INTERCOOLER_TEMP, ObdCommand.DPF_DIFFERENTIAL_PRESSURE,
-        ObdCommand.DPF_TEMP_IN, ObdCommand.DPF_TEMP_OUT, ObdCommand.DPF_STATUS
+        ObdCommand.DPF_TEMP_IN, ObdCommand.DPF_TEMP_OUT, ObdCommand.DPF_STATUS,
+        ObdCommand.CALC_DPF_CLOG, ObdCommand.CALC_BOOST_KPA, ObdCommand.CALC_BOOST_BAR,
+        ObdCommand.CALC_TURBO_LAG, ObdCommand.CALC_BOOST_OVERSHOOT, ObdCommand.CALC_BOOST_RISE_TIME,
+        ObdCommand.CALC_BOOST_HYSTERESIS, ObdCommand.CALC_BOOST_DROP_REDLINE,
+        ObdCommand.CALC_EGR_FLOW_ACTUAL, ObdCommand.CALC_EGR_EFFICIENCY, ObdCommand.CALC_INTERCOOLER_EFF,
+        ObdCommand.CALC_COMPRESSOR_EFF, ObdCommand.CALC_TURBO_RPM_PCT, ObdCommand.COMMANDED_EGR
     )),
-    DIAGNOSTICS("Diagnostyka", listOf(
+    DIAGNOSTICS("Diagnostyka i Elektryka", listOf(
         ObdCommand.STATUS, ObdCommand.DISTANCE_W_MIL, ObdCommand.DISTANCE_SINCE_DTC_CLEAR,
         ObdCommand.TIME_WITH_MIL, ObdCommand.TIME_SINCE_DTC_CLEARED,
         ObdCommand.CONTROL_MODULE_VOLTAGE, ObdCommand.OBD_COMPLIANCE,
-        ObdCommand.MONITOR_STATUS_DRIVE, ObdCommand.ODOMETER
+        ObdCommand.MONITOR_STATUS_DRIVE, ObdCommand.ODOMETER,
+        ObdCommand.CALC_VOLTAGE_DROP_START, ObdCommand.CALC_BATTERY_SOC, ObdCommand.CALC_CHARGE_TIME,
+        ObdCommand.CALC_EVAP_LEAK_TEST, ObdCommand.CALC_EVAP_PRES_REL, ObdCommand.CALC_ALTERNATOR_EFF,
+        ObdCommand.CALC_VOLTAGE_TEMP_COEFF, ObdCommand.EVAP_VAPOR_PRESSURE
     )),
     FREEZE_FRAME("Freeze Frame", listOf(
         ObdCommand.FF_ENGINE_RPM, ObdCommand.FF_VEHICLE_SPEED, ObdCommand.FF_ENGINE_LOAD,

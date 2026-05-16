@@ -11,20 +11,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/**
- * Zapisuje odczyty OBD2 do pliku JSON w katalogu aplikacji.
- *
- * Struktura pliku:
- * {
- *   "session_id": "email_2026-05-07_13-45-00",
- *   "vin": "WF0XXGCBXKJA12345",
- *   "started_at": "2026-05-07T13:45:00.000Z",
- *   "records": [ ... ]
- * }
- *
- * Każdy plik = jedna sesja jazdy.
- * Pliki trafiają do: /data/data/com.obdreader.app/files/obd_sessions/
- */
 class ObdDataLogger(private val context: Context) {
 
     companion object {
@@ -42,18 +28,10 @@ class ObdDataLogger(private val context: Context) {
     private var recordCount = 0
     private var isOpen = false
 
-    // ─── Sesja ───────────────────────────────────────────────────────────────
-
-    /**
-     * Otwiera nową sesję logowania.
-     * @param vin VIN pojazdu (lub pusty string)
-     * @param email email użytkownika (używany w nazwie sesji)
-     */
     fun openSession(vin: String = "", email: String = "") {
         val now = Date()
         val dateStr = FILE_DATE.format(now)
 
-        // Format: email_2026-05-07_13-45-00 lub sam dateStr jeśli brak emaila
         val sessionId = if (email.isNotBlank()) {
             val safeEmail = email
                 .replace("@", "_")
@@ -80,9 +58,6 @@ class ObdDataLogger(private val context: Context) {
         pruneOldFiles(dir)
     }
 
-    /**
-     * Zamyka sesję i zapisuje finalny plik JSON na dysk.
-     */
     suspend fun closeSession() = withContext(Dispatchers.IO) {
         if (!isOpen) return@withContext
         isOpen = false
@@ -90,12 +65,6 @@ class ObdDataLogger(private val context: Context) {
         Log.d(TAG, "Sesja zamknięta. Rekordów: $recordCount")
     }
 
-    // ─── Zapis rekordu ────────────────────────────────────────────────────────
-
-    /**
-     * Dodaje jeden rekord z bieżącymi danymi wszystkich czujników.
-     * Wywołuj po każdym cyklu skanowania.
-     */
     suspend fun addRecord(data: Map<ObdCommand, ObdResponseParser.ParsedValue>): JSONObject? =
         withContext(Dispatchers.IO) {
             if (!isOpen) return@withContext null
@@ -131,8 +100,6 @@ class ObdDataLogger(private val context: Context) {
             record
         }
 
-    // ─── Zapis pliku ─────────────────────────────────────────────────────────
-
     private fun flush() {
         val file = currentFile ?: return
         try {
@@ -147,8 +114,6 @@ class ObdDataLogger(private val context: Context) {
             Log.e(TAG, "Błąd zapisu: ${e.message}")
         }
     }
-
-    // ─── Zarządzanie plikami ─────────────────────────────────────────────────
 
     private fun pruneOldFiles(dir: File) {
         val files = dir.listFiles()

@@ -25,8 +25,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.obdreader.app.auth.AuthManager
 
-// ─── Pełny ekran zarządzania pojazdami ────────────────────────────────────────
-
 @Composable
 fun VehiclesScreen(
     vehicles: List<AuthManager.Vehicle>,
@@ -49,7 +47,6 @@ fun VehiclesScreen(
                     fuelType: String, engineDisplacementL: Double,
                     cylinderCount: Int, tankCapacityL: Int, vehicleMassKg: Int) -> Unit,
     onDismissEdit: () -> Unit,
-    // Dodawanie
     onAddClick: () -> Unit,
     onAddVehicle: (name: String, make: String, model: String, year: Int,
                    fuelType: String, engineDisplacementL: Double,
@@ -183,8 +180,6 @@ fun VehiclesScreen(
     }
 }
 
-// ─── Karta pojedynczego pojazdu ───────────────────────────────────────────────
-
 @Composable
 fun VehicleItemCard(
     vehicle: AuthManager.Vehicle,
@@ -250,7 +245,6 @@ fun VehicleItemCard(
                 if (metaLine.isNotBlank()) Text(metaLine, fontSize = 12.sp, color = AccentBlue.copy(0.7f))
             }
 
-            // Przyciski akcji po prawej
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("#${vehicle.id}", fontSize = 11.sp, color = TextSecondary.copy(0.5f))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -275,8 +269,6 @@ fun VehicleItemCard(
         }
     }
 }
-
-// ─── Dialog edycji pojazdu ────────────────────────────────────────────────────
 
 private val EDIT_FUEL_OPTIONS = listOf(
     Triple("petrol", "Benzyna", "⛽"),
@@ -332,7 +324,6 @@ fun EditVehicleDialog(
                 modifier = Modifier.padding(24.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // Nagłówek
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Box(modifier = Modifier.size(36.dp).clip(CircleShape).background(AccentBlue.copy(0.12f)), contentAlignment = Alignment.Center) {
                         Icon(Icons.Default.Edit, null, tint = AccentBlue, modifier = Modifier.size(20.dp))
@@ -471,8 +462,6 @@ private fun EditFuelTypePicker(
         }
     }
 }
-
-// ─── Dialog potwierdzenia usunięcia ──────────────────────────────────────────
 
 @Composable
 fun DeleteVehicleDialog(vehicle: AuthManager.Vehicle, isDeleting: Boolean, onConfirm: () -> Unit, onDismiss: () -> Unit) {
