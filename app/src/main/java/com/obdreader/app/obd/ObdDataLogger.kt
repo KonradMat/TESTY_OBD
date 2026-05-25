@@ -28,6 +28,10 @@ class ObdDataLogger(private val context: Context) {
     private var recordCount = 0
     private var isOpen = false
 
+    // ── BUG 1 FIX: zawsze twórz katalog, zwracaj go zamiast tworzyć inline ──────
+    private fun sessionsDir(): File =
+        File(context.filesDir, DIR_NAME).also { it.mkdirs() }
+
     fun openSession(vin: String = "", email: String = "") {
         val now = Date()
         val dateStr = FILE_DATE.format(now)
@@ -42,12 +46,13 @@ class ObdDataLogger(private val context: Context) {
             dateStr
         }
 
-        val dir = File(context.filesDir, DIR_NAME).also { it.mkdirs() }
+        val dir = sessionsDir()
         currentFile = File(dir, "${sessionId}.json")
 
         sessionMeta = JSONObject().apply {
             put("session_id", sessionId)
             put("started_at", ISO.format(now))
+            put("vin", vin)          // ── BUG 3 FIX: zapisuj VIN w meta od razu
             put("app_version", "1.0")
         }
         sessionArray = JSONArray()
@@ -129,26 +134,33 @@ class ObdDataLogger(private val context: Context) {
         }
     }
 
+    // ── BUG 1 FIX: sessionsDir() zawsze tworzy katalog → listFiles() nigdy null ─
+    // ── BUG 3 FIX: czytamy vin/record_count z JSON który teraz zawiera te pola  ─
     fun listSessions(): List<SessionInfo> {
-        val dir = File(context.filesDir, DIR_NAME)
-        return dir.listFiles()
+        val dir = sessionsDir()
+
+        val files = dir.listFiles()
             ?.filter { it.name.endsWith(".json") }
             ?.sortedByDescending { it.lastModified() }
-            ?.map { file ->
-                try {
-                    val json = JSONObject(file.readText())
-                    SessionInfo(
-                        file = file,
-                        sessionId = json.optString("session_id"),
-                        vin = json.optString("vin"),
-                        startedAt = json.optString("started_at"),
-                        recordCount = json.optInt("record_count"),
-                        sizeKb = file.length() / 1024
-                    )
-                } catch (e: Exception) {
-                    SessionInfo(file = file, sessionId = file.name)
-                }
-            } ?: emptyList()
+
+        Log.d(TAG, "listSessions: dir=${dir.absolutePath} exists=${dir.exists()} files=${files?.size ?: "null"}")
+
+        return files?.map { file ->
+            try {
+                val json = JSONObject(file.readText())
+                SessionInfo(
+                    file        = file,
+                    sessionId   = json.optString("session_id").ifBlank { file.nameWithoutExtension },
+                    vin         = json.optString("vin"),
+                    startedAt   = json.optString("started_at"),
+                    recordCount = json.optInt("record_count"),
+                    sizeKb      = file.length() / 1024
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Nie udało się sparsować ${file.name}: ${e.message}")
+                SessionInfo(file = file, sessionId = file.nameWithoutExtension)
+            }
+        } ?: emptyList()
     }
 
     fun currentSessionFile(): File? = currentFile

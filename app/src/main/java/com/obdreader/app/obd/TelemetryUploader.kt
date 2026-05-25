@@ -6,6 +6,7 @@ import android.net.NetworkCapabilities
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.OutputStreamWriter
@@ -67,28 +68,27 @@ class TelemetryUploader(private val context: Context) {
         if (!uploadOnSessionClose) return@withContext false
         try {
             val json = JSONObject(file.readText())
-            json.put("vehicle_id", vehicleId)
-            json.remove("vin")
-            json.remove("record_count")
-            if (!json.has("closed_at") || json.optString("closed_at").isBlank()) {
-                json.put("closed_at", ISO.format(Date()))
-            }
-            json.remove("app_version")
-            json.remove("batch")
-            json.remove("uploaded_at")
 
-            val ok = postJson(json.toString())
+            // Buduj payload explicite — nie dotykaj json (kopii z pliku)
+            val payload = JSONObject().apply {
+                put("vehicle_id", vehicleId)
+                put("session_id",  json.optString("session_id"))
+                put("started_at",  json.optString("started_at"))
+                put("closed_at",   json.optString("closed_at").ifBlank { ISO.format(Date()) })
+                put("records",     json.optJSONArray("records") ?: JSONArray())
+            }
+
+            val ok = postJson(payload.toString())
             if (ok) {
                 Log.d(TAG, "Sesja wysłana: ${file.name}")
                 lastUploadStatus = UploadStatus.SUCCESS(
                     recordsSent = json.optInt("record_count"),
                     timestamp   = ISO.format(Date())
                 )
-                true
             } else {
                 saveToRetry(file)
-                false
             }
+            ok
         } catch (e: Exception) {
             Log.e(TAG, "Błąd wysyłania sesji: ${e.message}")
             saveToRetry(file)
